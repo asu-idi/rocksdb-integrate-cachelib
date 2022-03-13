@@ -14,67 +14,67 @@
 #include "rocksdb/status.h"
 #include "util/compression.h"
 
-#include "cachelib/allocator/nvmcache/NvmCache.h"
-#include "cachelib/allocator/CacheAllocator.h"
+// #include "cachelib/allocator/nvmcache/NvmCache.h"
+// #include "cachelib/allocator/CacheAllocator.h"
 
-namespace ROCKSDB_NAMESPACE {
-using namespace facebook::cachelib;
+// namespace ROCKSDB_NAMESPACE {
+// // using namespace facebook::cachelib;
 
-class SecondaryNVMCacheResultHandle : public SecondaryCacheResultHandle {
- public:
-  SecondaryNVMCacheResultHandle(void* value, size_t size)
-      : value_(value), size_(size) {}
-  virtual ~SecondaryNVMCacheResultHandle() override = default;
+// class SecondaryNVMCacheResultHandle : public SecondaryCacheResultHandle {
+//  public:
+//   SecondaryNVMCacheResultHandle(void* value, size_t size)
+//       : value_(value), size_(size) {}
+//   virtual ~SecondaryNVMCacheResultHandle() override = default;
 
-  SecondaryNVMCacheResultHandle(const SecondaryNVMCacheResultHandle&) = delete;
-  SecondaryNVMCacheResultHandle& operator=(
-      const SecondaryNVMCacheResultHandle&) = delete;
+//   SecondaryNVMCacheResultHandle(const SecondaryNVMCacheResultHandle&) = delete;
+//   SecondaryNVMCacheResultHandle& operator=(
+//       const SecondaryNVMCacheResultHandle&) = delete;
 
-  bool IsReady() override { return true; }
+//   bool IsReady() override { return true; }
 
-  void Wait() override {}
+//   void Wait() override {}
 
-  void* Value() override { return value_; }
+//   void* Value() override { return value_; }
 
-  size_t Size() override { return size_; }
+//   size_t Size() override { return size_; }
 
- private:
-  void* value_;
-  size_t size_;
-};
+//  private:
+//   void* value_;
+//   size_t size_;
+// };
 
-// The SecondaryNVMCache is a concrete implementation of
-// rocksdb::SecondaryCache.
+// // The SecondaryNVMCache is a concrete implementation of
+// // rocksdb::SecondaryCache.
 
-class SecondaryNVMCache : public SecondaryCache {
- public:
-  SecondaryNVMCache(
-      Config config
-      //basic params about nvmcache&navy
-    /*nvmcache_config to initiate*/);
+// class SecondaryNVMCache : public SecondaryCache {
+//  public:
+//   SecondaryNVMCache(
+//       Config config
+//       //basic params about nvmcache&navy
+//     /*nvmcache_config to initiate*/);
 
-  virtual ~SecondaryNVMCache() override;
+//   virtual ~SecondaryNVMCache() override;
 
-  const char* Name() const override { return "SecondaryNVMCache"; }
+//   const char* Name() const override { return "SecondaryNVMCache"; }
 
-  Status Insert(const Slice& key, void* value,
-                const Cache::CacheItemHelper* helper) override;
+//   Status Insert(const Slice& key, void* value,
+//                 const Cache::CacheItemHelper* helper) override;
 
-  std::unique_ptr<SecondaryCacheResultHandle> Lookup(
-      const Slice& key, const Cache::CreateCallback& create_cb,
-      bool /*wait*/) override;
+//   std::unique_ptr<SecondaryCacheResultHandle> Lookup(
+//       const Slice& key, const Cache::CreateCallback& create_cb,
+//       bool /*wait*/) override;
 
-  void Erase(const Slice& key) override;
+//   void Erase(const Slice& key) override;
 
-  void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
+//   void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
 
-  std::string GetPrintableOptions() const override;
+//   std::string GetPrintableOptions() const override;
 
- private:
-//   std::shared_ptr<Cache> cache_;
-  std::unique_ptr<CacheT> nvmCache_;
-  SecondaryNVMCacheOptions cache_options_;
-  const Config config_{};
-};
+//  private:
+// //   std::shared_ptr<Cache> cache_;
+//   std::unique_ptr<CacheT> nvmCache_;
+//   SecondaryNVMCacheOptions cache_options_;
+//   const Config config_{};
+// };
 
-}  // namespace ROCKSDB_NAMESPACE
+// }  // namespace ROCKSDB_NAMESPACE
