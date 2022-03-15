@@ -48,6 +48,13 @@ if(@WITH_TBB@)
   find_dependency(TBB)
 endif()
 
+if(@WITH_CACHELIB@)
+  find_dependency(CacheLib CONFIG)
+  if(NOT CacheLib_FOUND)
+    find_dependency(CacheLib)
+  endif()
+endif()
+
 find_dependency(Threads)
 
 include("${CMAKE_CURRENT_LIST_DIR}/RocksDBTargets.cmake")

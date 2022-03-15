@@ -62,13 +62,14 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
-option(WITH_JEMALLOC "build with JeMalloc" OFF)
+option(WITH_JEMALLOC "build with JeMalloc" ON)
 option(WITH_LIBURING "build with liburing" ON)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
 option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
+option(WITH_CACHELIB "build with cachelib" ON)
 if (WITH_WINDOWS_UTF8_FILENAMES)
   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
 endif()
@@ -180,6 +181,13 @@ else()
     include_directories(${ZSTD_INCLUDE_DIR})
     list(APPEND THIRDPARTY_LIBS zstd::zstd)
   endif()
+endif()
+
+# add cachelib
+if(WITH_CACHELIB)
+  find_package(CacheLib REQUIRED)
+  add_definitions(-DCACHELIB)
+  list(APPEND THIRDPARTY_LIBS CacheLib::cachelib)
 endif()
 
 string(TIMESTAMP TS "%Y-%m-%d %H:%M:%S" UTC)
@@ -1158,7 +1166,7 @@ if(WITH_TESTS)
         cache/cache_test.cc
         cache/lru_cache_test.cc
         cache/lru_secondary_cache_test.cc
-        cache/secondary_nvm_cache_test.cc
+        # cache/secondary_nvm_cache_test.cc
         db/blob/blob_counting_iterator_test.cc
         db/blob/blob_file_addition_test.cc
         db/blob/blob_file_builder_test.cc
