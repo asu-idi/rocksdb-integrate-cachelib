@@ -1,7 +1,6 @@
 make_config.mk
 rocksdb.pc
 
-!/cmake/modules/FindCacheLib.cmake
 *.a
 *.arc
 *.d

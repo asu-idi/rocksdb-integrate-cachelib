@@ -24,7 +24,7 @@ if(CacheLib_INCLUDE_DIRS
     AND CacheLib_SHM
     AND CacheLib_COMMON
     AND CacheLib_NAVY)
-        set(CacheLib_LIBRARIES ${CacheLib_DATATYPE} ${CacheLib_COMMON} ${CacheLib_SHM} ${CacheLib_NAVY} ${CacheLib_ALLOCATOR} ${CacheLib_NAVY})
+        set(CacheLib_LIBRARIES ${CacheLib_ALLOCATOR} ${CacheLib_DATATYPE} ${CacheLib_SHM} ${CacheLib_COMMON} ${CacheLib_NAVY})
         mark_as_advanced(
             CacheLib_INCLUDE_DIRS
             CacheLib_LIBRARIES
@@ -38,8 +38,8 @@ if(CacheLib_FOUND AND NOT (TARGET CacheLib::cachelib))
   add_library (CacheLib::cachelib UNKNOWN IMPORTED)
   set_target_properties(CacheLib::cachelib
     PROPERTIES
-    IMPORTED_LOCATION "${CacheLib_LIBRARIES}"
-    INTERFACE_INCLUDE_DIRECTORIES "${CacheLib_INCLUDE_DIRS}")
+    IMPORTED_LOCATION ${CacheLib_LIBRARIES}
+    INTERFACE_INCLUDE_DIRECTORIES ${CacheLib_INCLUDE_DIRS})
 endif()
 
 
