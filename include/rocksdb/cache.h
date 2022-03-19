@@ -164,7 +164,7 @@ struct LRUSecondaryCacheOptions : LRUCacheOptions {
 // Options structure for configuring a SecondaryCache instance based on
 // NVMCache. The LRUCacheOptions.secondary_cache is not used and
 // should not be set.
-struct SecondaryNVMCacheOptions : LRUCacheOptions {
+struct NVMSecondaryCacheOptions : LRUCacheOptions {
   // The compression method (if any) that is used to compress data.
   CompressionType compression_type = CompressionType::kLZ4Compression;
 
@@ -175,8 +175,8 @@ struct SecondaryNVMCacheOptions : LRUCacheOptions {
   // header in varint32 format.
   uint32_t compress_format_version = 2;
 
-  SecondaryNVMCacheOptions() {}
-  SecondaryNVMCacheOptions(
+  NVMSecondaryCacheOptions() {}
+  NVMSecondaryCacheOptions(
       size_t _capacity, int _num_shard_bits, bool _strict_capacity_limit,
       double _high_pri_pool_ratio,
       std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
