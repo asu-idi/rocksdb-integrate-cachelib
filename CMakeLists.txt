@@ -185,9 +185,9 @@ endif()
 
 # add cachelib
 if(WITH_CACHELIB)
-  find_package(CacheLib REQUIRED)
+  find_package(CacheLib CONFIG REQUIRED)
   add_definitions(-DCACHELIB)
-  list(APPEND THIRDPARTY_LIBS CacheLib::cachelib)
+  list(APPEND THIRDPARTY_LIBS cachelib)
 endif()
 
 string(TIMESTAMP TS "%Y-%m-%d %H:%M:%S" UTC)
