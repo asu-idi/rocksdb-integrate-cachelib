@@ -7,7 +7,6 @@ LIB_SOURCES =                                                   \
   cache/clock_cache.cc                                          \
   cache/lru_cache.cc                                            \
   cache/lru_secondary_cache.cc                                  \
-  cache/nvm_secondary_cache.cc                                  \
   cache/sharded_cache.cc                                        \
   db/arena_wrapped_db_iter.cc                                   \
   db/blob/blob_fetcher.cc                                       \
@@ -404,7 +403,6 @@ TEST_MAIN_SOURCES =                                                     \
   cache/cache_reservation_manager_test.cc                               \
   cache/lru_cache_test.cc                                               \
   cache/lru_secondary_cache_test.cc                                     \
-  cache/nvm_secondary_cache_test.cc                                     \
   db/blob/blob_counting_iterator_test.cc                                \
   db/blob/blob_file_addition_test.cc                                    \
   db/blob/blob_file_builder_test.cc                                     \

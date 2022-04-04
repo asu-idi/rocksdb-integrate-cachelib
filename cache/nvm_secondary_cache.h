@@ -14,11 +14,11 @@
 #include "rocksdb/status.h"
 #include "util/compression.h"
 
-#include <cachelib/allocator/nvmcache/NvmCache.h>
 #include <cachelib/allocator/CacheAllocator.h>
+#include <cachelib/allocator/nvmcache/NvmCache.h>
 
 namespace ROCKSDB_NAMESPACE {
-// using namespace facebook::cachelib;
+using namespace facebook::cachelib;
 
 class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
  public:

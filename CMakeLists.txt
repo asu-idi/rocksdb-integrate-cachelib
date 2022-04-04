@@ -62,7 +62,7 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
-option(WITH_JEMALLOC "build with JeMalloc" ON)
+option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_LIBURING "build with liburing" ON)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
 option(WITH_LZ4 "build with lz4" OFF)
@@ -91,6 +91,14 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux|Windows")
 else()
   option(WITH_FOLLY_DISTRIBUTED_MUTEX "build with folly::DistributedMutex" OFF)
 endif()
+
+# if(CMAKE_SYSTEM_NAME MATCHES "Linux|Windows")
+#   if(MSVC AND MSVC_VERSION LESS 1910)
+#     # Folly does not compile with MSVC older than VS2017
+#     find_package(folly CONFIG REQUIRED)
+#     add_definitions(-DFOLLY)
+#   endif()
+# endif()
 
 if( NOT DEFINED CMAKE_CXX_STANDARD )
   set(CMAKE_CXX_STANDARD 17)
@@ -124,7 +132,7 @@ else()
   if(WITH_GFLAGS)
     # Config with namespace available since gflags 2.2.2
     option(GFLAGS_USE_TARGET_NAMESPACE "Use gflags import target with namespace." ON)
-    find_package(gflags CONFIG)
+    # find_package(gflags REQUIRED)
     if(gflags_FOUND)
       if(TARGET ${GFLAGS_TARGET})
         # Config with GFLAGS_TARGET available since gflags 2.2.0
@@ -622,7 +630,7 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 if(WITH_FOLLY_DISTRIBUTED_MUTEX)
-  include_directories(${PROJECT_SOURCE_DIR}/third-party/folly)
+  include_directories(/usr/local/include/folly)
 endif()
 find_package(Threads REQUIRED)
 
@@ -637,7 +645,6 @@ set(SOURCES
         cache/lru_cache.cc
         cache/lru_secondary_cache.cc
         cache/sharded_cache.cc
-        cache/nvm_secondary_cache.cc
         db/arena_wrapped_db_iter.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
@@ -1007,11 +1014,11 @@ endif()
 
 if(WITH_FOLLY_DISTRIBUTED_MUTEX)
   list(APPEND SOURCES
-    third-party/folly/folly/detail/Futex.cpp
-    third-party/folly/folly/synchronization/AtomicNotification.cpp
-    third-party/folly/folly/synchronization/DistributedMutex.cpp
-    third-party/folly/folly/synchronization/ParkingLot.cpp
-    third-party/folly/folly/synchronization/WaitOptions.cpp)
+    /usr/local/include/folly/detail/Futex.h
+    /usr/local/include/folly/synchronization/AtomicNotification.h
+    /usr/local/include/folly/synchronization/DistributedMutex.h
+    /usr/local/include/folly/synchronization/ParkingLot.h
+    /usr/local/include/folly/synchronization/WaitOptions.h)
 endif()
 
 set(ROCKSDB_STATIC_LIB rocksdb${ARTIFACT_SUFFIX})
@@ -1059,13 +1066,21 @@ else()
   set(ROCKSDB_LIB ${ROCKSDB_STATIC_LIB})
 endif()
 
+# option(WITH_JNI "build with JNI" OFF)
+# # Tests are excluded from Release builds
+# CMAKE_DEPENDENT_OPTION(WITH_TESTS "build with tests" ON
+#   "CMAKE_BUILD_TYPE STREQUAL Debug" OFF)
+# option(WITH_BENCHMARK_TOOLS "build with benchmarks" ON)
+# option(WITH_CORE_TOOLS "build with ldb and sst_dump" ON)
+# option(WITH_TOOLS "build with tools" ON)
+
 option(WITH_JNI "build with JNI" OFF)
 # Tests are excluded from Release builds
-CMAKE_DEPENDENT_OPTION(WITH_TESTS "build with tests" ON
+CMAKE_DEPENDENT_OPTION(WITH_TESTS "build with tests" OFF
   "CMAKE_BUILD_TYPE STREQUAL Debug" OFF)
-option(WITH_BENCHMARK_TOOLS "build with benchmarks" ON)
-option(WITH_CORE_TOOLS "build with ldb and sst_dump" ON)
-option(WITH_TOOLS "build with tools" ON)
+option(WITH_BENCHMARK_TOOLS "build with benchmarks" OFF)
+option(WITH_CORE_TOOLS "build with ldb and sst_dump" OFF)
+option(WITH_TOOLS "build with tools" OFF)
 
 if(WITH_TESTS OR WITH_BENCHMARK_TOOLS OR WITH_TOOLS OR WITH_JNI OR JNI)
   include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/third-party/gtest-1.8.1/fused-src)
@@ -1145,8 +1160,8 @@ if(NOT WIN32 OR ROCKSDB_INSTALL_ON_WINDOWS)
   )
 endif()
 
-option(WITH_ALL_TESTS "Build all test, rather than a small subset" ON)
-
+# option(WITH_ALL_TESTS "Build all test, rather than a small subset" ON)
+option(WITH_ALL_TESTS "Build all test, rather than a small subset" OFF)
 if(WITH_TESTS OR WITH_BENCHMARK_TOOLS)
   add_subdirectory(third-party/gtest-1.8.1/fused-src/gtest)
   add_library(testharness STATIC
@@ -1166,7 +1181,6 @@ if(WITH_TESTS)
         cache/cache_test.cc
         cache/lru_cache_test.cc
         cache/lru_secondary_cache_test.cc
-        cache/nvm_secondary_cache_test.cc
         db/blob/blob_counting_iterator_test.cc
         db/blob/blob_file_addition_test.cc
         db/blob/blob_file_builder_test.cc
@@ -1354,7 +1368,7 @@ if(WITH_TESTS)
   endif()
 
   if(WITH_FOLLY_DISTRIBUTED_MUTEX)
-    list(APPEND TESTS third-party/folly/folly/synchronization/test/DistributedMutexTest.cpp)
+    list(APPEND TESTS /usr/local/include/folly/synchronization/DistributedMutex.h)
   endif()
 
   set(TESTUTIL_SOURCE
