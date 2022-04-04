@@ -15,6 +15,7 @@
 #include <deque>
 #include <limits>
 #include <memory>
+#include <folly/ConstexprMath.h>
 
 #include "cache/cache_entry_roles.h"
 #include "cache/cache_reservation_manager.h"
@@ -28,7 +29,7 @@
 #include "table/block_based/block_based_table_reader.h"
 #include "table/block_based/filter_policy_internal.h"
 #include "table/block_based/full_filter_block.h"
-#include "third-party/folly/folly/ConstexprMath.h"
+
 #include "util/bloom_impl.h"
 #include "util/coding.h"
 #include "util/hash.h"

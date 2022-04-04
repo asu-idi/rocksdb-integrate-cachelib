@@ -13,7 +13,7 @@
 #include "util/bloom_impl.h"
 #include "util/hash.h"
 
-#include "third-party/folly/folly/ConstexprMath.h"
+#include <folly/ConstexprMath.h>
 
 #include <memory>
 
