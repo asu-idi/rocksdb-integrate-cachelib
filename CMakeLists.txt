@@ -644,6 +644,7 @@ set(SOURCES
         cache/clock_cache.cc
         cache/lru_cache.cc
         cache/lru_secondary_cache.cc
+        cache/nvm_secondary_cache.cc
         cache/sharded_cache.cc
         db/arena_wrapped_db_iter.cc
         db/blob/blob_fetcher.cc
@@ -1076,7 +1077,7 @@ endif()
 
 option(WITH_JNI "build with JNI" OFF)
 # Tests are excluded from Release builds
-CMAKE_DEPENDENT_OPTION(WITH_TESTS "build with tests" OFF
+CMAKE_DEPENDENT_OPTION(WITH_TESTS "build with tests" ON
   "CMAKE_BUILD_TYPE STREQUAL Debug" OFF)
 option(WITH_BENCHMARK_TOOLS "build with benchmarks" OFF)
 option(WITH_CORE_TOOLS "build with ldb and sst_dump" OFF)
@@ -1171,10 +1172,13 @@ if(WITH_TESTS OR WITH_BENCHMARK_TOOLS)
 endif()
 
 if(WITH_TESTS)
-  set(TESTS
-        db/db_basic_test.cc
-        env/env_basic_test.cc
+  set(TESTS 
+        cache/lru_secondary_cache_test.cc
   )
+  # set(TESTS
+  #       db/db_basic_test.cc
+  #       env/env_basic_test.cc
+  # )
   if(WITH_ALL_TESTS)
     list(APPEND TESTS
         cache/cache_reservation_manager_test.cc
@@ -1367,9 +1371,9 @@ if(WITH_TESTS)
     )
   endif()
 
-  if(WITH_FOLLY_DISTRIBUTED_MUTEX)
-    list(APPEND TESTS /usr/local/include/folly/synchronization/DistributedMutex.h)
-  endif()
+  # if(WITH_FOLLY_DISTRIBUTED_MUTEX)
+  #   list(APPEND TESTS /usr/local/include/folly/synchronization/DistributedMutex.h)
+  # endif()
 
   set(TESTUTIL_SOURCE
       db/db_test_util.cc
