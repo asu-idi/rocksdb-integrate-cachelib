@@ -14,44 +14,52 @@
 #include "rocksdb/status.h"
 #include "util/compression.h"
 
+#include <folly/Optional.h>
+#include <cachelib/allocator/CacheTraits.h>
 #include <cachelib/allocator/CacheAllocator.h>
 #include <cachelib/allocator/nvmcache/NvmCache.h>
 
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
 
-class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
- public:
-  NVMSecondaryCacheResultHandle(void* value, size_t size)
-      : value_(value), size_(size) {}
-  virtual ~NVMSecondaryCacheResultHandle() override = default;
+// class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
+//  public:
+//   NVMSecondaryCacheResultHandle(void* value, size_t size)
+//       : value_(value), size_(size) {}
+//   virtual ~NVMSecondaryCacheResultHandle() override = default;
 
-  NVMSecondaryCacheResultHandle(const NVMSecondaryCacheResultHandle&) = delete;
-  NVMSecondaryCacheResultHandle& operator=(
-      const NVMSecondaryCacheResultHandle&) = delete;
+//   NVMSecondaryCacheResultHandle(const NVMSecondaryCacheResultHandle&) = delete;
+//   NVMSecondaryCacheResultHandle& operator=(
+//       const NVMSecondaryCacheResultHandle&) = delete;
 
-  bool IsReady() override { return true; }
+//   bool IsReady() override { return true; }
 
-  void Wait() override {}
+//   void Wait() override {}
 
-  void* Value() override { return value_; }
+//   void* Value() override { return value_; }
 
-  size_t Size() override { return size_; }
+//   size_t Size() override { return size_; }
 
- private:
-  void* value_;
-  size_t size_;
-};
+//  private:
+//   void* value_;
+//   size_t size_;
+// };
 
 // The NVMSecondaryCache is a concrete implementation of
 // rocksdb::SecondaryCache.
-
+// NvmSecondaryCache uses the LruCacheTrait as an example.
 class NVMSecondaryCache : public SecondaryCache {
  public:
-  NVMSecondaryCache(
-      Config config
-      //basic params about nvmcache&navy
-    /*nvmcache_config to initiate*/);
+  using CacheT = CacheAllocator<LruCacheTrait>;
+  using NvmCacheT = NvmCache<CacheT>;
+  using NvmCacheConfig = typename NvmCacheT::Config;
+  using ItemDestructor = typename CacheT::ItemDestructor;
+
+ // Construtor function is used to initialize the cache_options 
+ // and instantialize the nvmcache_
+  // NVMSecondaryCache(navy::NavyConfig navyConfig, CacheT::ItemDestructor *itemDestructor, bool truncateItemToOriginalAllocSizeInNvm = false,
+  //   bool enableFastNegativeLookups = false, bool truncate = false);
+    NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
 
   virtual ~NVMSecondaryCache() override;
 
@@ -72,9 +80,12 @@ class NVMSecondaryCache : public SecondaryCache {
 
  private:
 //   std::shared_ptr<Cache> cache_;
-  std::unique_ptr<CacheT> nvmCache_;
-  NVMSecondaryCacheOptions cache_options_;
-  const Config config_{};
+  std::unique_ptr<NvmCacheT> nvmCache_;
+
+  // NVMSecondaryCacheOptions cache_options_;
+  NvmCacheConfig nvmConfig_{};
+  const ItemDestructor itemDestructor_;
+  
 };
 
 }  // namespace ROCKSDB_NAMESPACE

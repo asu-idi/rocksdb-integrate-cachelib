@@ -22,12 +22,14 @@ namespace {
 
 }  // namespace
 
-NVMSecondaryCache::NVMSecondaryCache(Config config,bool truncate): config_(config.validate()){
-    nvmCache_ = std::make_unique<NvmCacheT>(*this, *config_.nvmConfig, truncate,
-                                          config_.itemDestructor);
+NVMSecondaryCache::NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate)
+:nvmConfig_(config.validateAndSetDefaults()), itemDestructor_(itemDestructor){
+    nvmCache_ = std::make_unique<NvmCacheT>(cache, nvmConfig_, truncate,itemDestructor_);
 }
 
-NVMSecondaryCache::~NVMSecondaryCache() { nvmcache_.reset(); }
+
+NVMSecondaryCache::~NVMSecondaryCache() { nvmCache_.reset(); }
+
 
 std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
     const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
