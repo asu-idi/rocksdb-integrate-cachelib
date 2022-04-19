@@ -31,29 +31,36 @@ NVMSecondaryCache::NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCa
 NVMSecondaryCache::~NVMSecondaryCache() { nvmCache_.reset(); }
 
 
-std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
-    const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
+// std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
+//     const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
 
-}
+// }
 
-Status NVMSecondaryCache::Insert(const Slice& key, void* value,
-                                 const Cache::CacheItemHelper* helper) {
+// Status NVMSecondaryCache::Insert(const Slice& key, void* value,
+//                                  const Cache::CacheItemHelper* helper) {
 
-}
+// }
 
 void NVMSecondaryCache::Erase(const Slice& key) { 
-
+    if(key.empty()){
+        return;
+    }
+    std::string key_;
+    key_.append(key.data(),key.size());
+    nvmCache_->remove(key_,nvmCache_->createDeleteTombStone(key_));
+    return;
 }
 
-std::string NVMSecondaryCache::GetPrintableOptions() const {
+// std::string NVMSecondaryCache::GetPrintableOptions() const {
 
-}
+// }
 
-std::shared_ptr<SecondaryCache> NewNVMSecondaryCache() {
+// std::shared_ptr<SecondaryCache> NewNVMSecondaryCache() {
 
-}
+// }
 
-std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(){
-}
+// std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(){
+    
+// }
 
 }  // namespace ROCKSDB_NAMESPACE

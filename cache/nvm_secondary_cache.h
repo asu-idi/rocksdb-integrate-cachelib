@@ -22,28 +22,28 @@
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
 
-// class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
-//  public:
-//   NVMSecondaryCacheResultHandle(void* value, size_t size)
-//       : value_(value), size_(size) {}
-//   virtual ~NVMSecondaryCacheResultHandle() override = default;
+class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
+ public:
+  NVMSecondaryCacheResultHandle(void* value, size_t size)
+      : value_(value), size_(size) {}
+  virtual ~NVMSecondaryCacheResultHandle() override = default;
 
-//   NVMSecondaryCacheResultHandle(const NVMSecondaryCacheResultHandle&) = delete;
-//   NVMSecondaryCacheResultHandle& operator=(
-//       const NVMSecondaryCacheResultHandle&) = delete;
+  NVMSecondaryCacheResultHandle(const NVMSecondaryCacheResultHandle&) = delete;
+  NVMSecondaryCacheResultHandle& operator=(
+      const NVMSecondaryCacheResultHandle&) = delete;
 
-//   bool IsReady() override { return true; }
+  bool IsReady() override { return true; }
 
-//   void Wait() override {}
+  void Wait() override {}
 
-//   void* Value() override { return value_; }
+  void* Value() override { return value_; }
 
-//   size_t Size() override { return size_; }
+  size_t Size() override { return size_; }
 
-//  private:
-//   void* value_;
-//   size_t size_;
-// };
+ private:
+  void* value_;
+  size_t size_;
+};
 
 // The NVMSecondaryCache is a concrete implementation of
 // rocksdb::SecondaryCache.
@@ -55,28 +55,28 @@ class NVMSecondaryCache : public SecondaryCache {
   using NvmCacheConfig = typename NvmCacheT::Config;
   using ItemDestructor = typename CacheT::ItemDestructor;
 
- // Construtor function is used to initialize the cache_options 
- // and instantialize the nvmcache_
+  // Construtor function is used to initialize the cache_options 
+  // and instantialize the nvmcache_
   // NVMSecondaryCache(navy::NavyConfig navyConfig, CacheT::ItemDestructor *itemDestructor, bool truncateItemToOriginalAllocSizeInNvm = false,
   //   bool enableFastNegativeLookups = false, bool truncate = false);
-    NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
+  NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
 
   virtual ~NVMSecondaryCache() override;
 
   const char* Name() const override { return "NVMSecondaryCache"; }
 
-  Status Insert(const Slice& key, void* value,
-                const Cache::CacheItemHelper* helper) override;
+  // Status Insert(const Slice& key, void* value,
+  //               const Cache::CacheItemHelper* helper) override;
 
-  std::unique_ptr<SecondaryCacheResultHandle> Lookup(
-      const Slice& key, const Cache::CreateCallback& create_cb,
-      bool /*wait*/) override;
+  // std::unique_ptr<SecondaryCacheResultHandle> Lookup(
+  //     const Slice& key, const Cache::CreateCallback& create_cb,
+  //     bool /*wait*/) override;
 
   void Erase(const Slice& key) override;
 
-  void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
+  // void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
 
-  std::string GetPrintableOptions() const override;
+  // std::string GetPrintableOptions() const override;
 
  private:
 //   std::shared_ptr<Cache> cache_;
