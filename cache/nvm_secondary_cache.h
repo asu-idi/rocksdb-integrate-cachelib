@@ -65,25 +65,25 @@ class NVMSecondaryCache : public SecondaryCache {
 
   const char* Name() const override { return "NVMSecondaryCache"; }
 
-  // Status Insert(const Slice& key, void* value,
-  //               const Cache::CacheItemHelper* helper) override;
+  Status Insert(const Slice& key, void* value,
+                const Cache::CacheItemHelper* helper) override;
 
-  // std::unique_ptr<SecondaryCacheResultHandle> Lookup(
-  //     const Slice& key, const Cache::CreateCallback& create_cb,
-  //     bool /*wait*/) override;
+  std::unique_ptr<SecondaryCacheResultHandle> Lookup(
+      const Slice& key, const Cache::CreateCallback& create_cb,
+      bool /*wait*/) override;
 
   void Erase(const Slice& key) override;
 
-  // void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
+//   void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
 
-  // std::string GetPrintableOptions() const override;
+  std::string GetPrintableOptions() const override;
 
  private:
-//   std::shared_ptr<Cache> cache_;
-  std::unique_ptr<NvmCacheT> nvmCache_;
-
+  // std::shared_ptr<Cache> cache_;
   // NVMSecondaryCacheOptions cache_options_;
+  std::unique_ptr<NvmCacheT> nvmCache_;
   NvmCacheConfig nvmConfig_{};
+  CacheT& cache_;
   const ItemDestructor itemDestructor_;
   
 };
