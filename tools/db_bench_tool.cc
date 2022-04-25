@@ -576,6 +576,11 @@ DEFINE_double(lru_secondary_cache_high_pri_pool_ratio, 0.0,
 DEFINE_string(lru_secondary_cache_compression_type, "lz4",
               "The compression algorithm to use for large "
               "values stored in LRUSecondaryCache.");
+
+DEFINE_bool(use_nvm_secondary_cache, true,
+            "Use the NVMSecondaryCache as the secondary cache.");
+
+DEFINE_
 static enum ROCKSDB_NAMESPACE::CompressionType
     FLAGS_lru_secondary_cache_compression_type_e =
         ROCKSDB_NAMESPACE::kLZ4Compression;
