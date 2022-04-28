@@ -13,6 +13,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "util/compression.h"
+#include "rocksdb/cache.h"
 
 #include <folly/Optional.h>
 #include <cachelib/allocator/CacheTraits.h>
@@ -59,7 +60,8 @@ class NVMSecondaryCache : public SecondaryCache {
   // and instantialize the nvmcache_
   // NVMSecondaryCache(navy::NavyConfig navyConfig, CacheT::ItemDestructor *itemDestructor, bool truncateItemToOriginalAllocSizeInNvm = false,
   //   bool enableFastNegativeLookups = false, bool truncate = false);
-  NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
+  // NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
+  NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options);
 
   virtual ~NVMSecondaryCache() override;
 
@@ -74,18 +76,16 @@ class NVMSecondaryCache : public SecondaryCache {
 
   void Erase(const Slice& key) override;
 
-//   void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
+  void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
 
   std::string GetPrintableOptions() const override;
 
  private:
   // std::shared_ptr<Cache> cache_;
   // NVMSecondaryCacheOptions cache_options_;
-  std::unique_ptr<NvmCacheT> nvmCache_;
-  NvmCacheConfig nvmConfig_{};
   CacheT& cache_;
-  const ItemDestructor itemDestructor_;
-  
+  NVMSecondaryCacheOptions nvmConfig_{};
+  std::unique_ptr<NvmCacheT> nvmCache_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

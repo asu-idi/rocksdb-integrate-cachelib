@@ -37,7 +37,7 @@
 #include <cachelib/allocator/CacheAllocator.h>
 #include <cachelib/allocator/nvmcache/NvmCache.h>
 #include "cachelib/allocator/nvmcache/NavyConfig.h"
-using namespace facebook::cachelib;
+
 namespace ROCKSDB_NAMESPACE {
 
 class Cache;
@@ -171,8 +171,8 @@ struct LRUSecondaryCacheOptions : LRUCacheOptions {
 // should not be set.
 struct NVMSecondaryCacheOptions {
 
-  using CacheT = CacheAllocator<LruCacheTrait>;
-  using NvmCacheT = NvmCache<CacheT>;
+  using CacheT = facebook::cachelib::CacheAllocator<facebook::cachelib::LruCacheTrait>;
+  using NvmCacheT = facebook::cachelib::NvmCache<CacheT>;
   using NvmCacheConfig = typename NvmCacheT::Config;
   NvmCacheConfig nvmConfig_{};
   // The compression method (if any) that is used to compress data.
