@@ -76,42 +76,56 @@ std::string NVMSecondaryCache::GetPrintableOptions() const {
     return "";
 }
 
-// std::shared_ptr<SecondaryCache> NewNVMSecondaryCache() {
 
-// }
+std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
+    std::string _fileName , uint64_t _fileSize, bool _truncateFile,
+    uint64_t _deviceMetadataSize, uint64_t _blockSize, uint64_t _navyReqOrderingShards,
+    unsigned int _readerThreads, unsigned int _writerThreads, 
+    double _admProbability, uint32_t _regionSize, unsigned int _sizePct, uint64_t _smallItemMaxSize, 
+    uint32_t _bigHashBucketSize, uint64_t _bigHashBucketBfSize,
+    CompressionType _compression_type, uint32_t _compress_format_version){
+        NVMSecondaryCacheOptions opts = NVMSecondaryCacheOptions(
+            _fileName, _fileSize, _truncateFile, _deviceMetadataSize, _blockSize, _navyReqOrderingShards, 
+            _readerThreads, _writerThreads, _admProbability, _regionSize, _sizePct , _smallItemMaxSize, 
+            _bigHashBucketSize, _bigHashBucketBfSize, _compression_type, _compress_format_version);
+        return NewNVMSecondaryCache(opts);
+    }
 
-// std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
-//     std::string _fileName , uint64_t _fileSize, bool _truncateFile,
-//     uint64_t _deviceMetadataSize, uint64_t _blockSize, uint64_t _navyReqOrderingShards,
-//     unsigned int _readerThreads, unsigned int _writerThreads, 
-//     double _admProbability, uint32_t _regionSize, unsigned int _sizePct, uint64_t _smallItemMaxSize, 
-//     uint32_t _bigHashBucketSize, uint64_t _bigHashBucketBfSize,
-//     CompressionType _compression_type, uint32_t _compress_format_version){
-//         NVMSecondaryCacheOptions opts = NVMSecondaryCacheOptions(
-//             _fileName, _fileSize, _truncateFile, _deviceMetadataSize, _blockSize, _navyReqOrderingShards, 
-//             _readerThreads, _writerThreads, _admProbability, _regionSize, _sizePct , _smallItemMaxSize, 
-//             _bigHashBucketSize, _bigHashBucketBfSize, _compression_type, _compress_format_version);
-//         return NewNVMSecondaryCache(opts);
-//     }
+std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(const NVMSecondaryCacheOptions& opts){
+    facebook::cachelib::LruAllocator::Config _config;
+    // std::atomic<size_t> nEvictions_{0};
+    std::set<uint32_t> poolAllocsizes_{20 * 1024};
 
-// std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(const NVMSecondaryCacheOptions& opts){
-//     facebook::cachelib::LruAllocator::Config _config;
-//     // std::atomic<size_t> nEvictions_{0};
-//     std::set<uint32_t> poolAllocsizes_{20 * 1024};
+    _config.enableCachePersistence("/tmp");
+    // _config.setRemoveCallback(
+    //     [this](const facebook::cachelib::LruAllocator::RemoveCbData&) { nEvictions_++; });
+    _config.setCacheSize(20 * 1024 * 1024);
+    _config.enablePoolRebalancing(nullptr, std::chrono::seconds{0});
+    facebook::cachelib::LruAllocator::NvmCacheConfig nvmConfig;
 
-//     _config.enableCachePersistence("/tmp");
-//     // _config.setRemoveCallback(
-//     //     [this](const facebook::cachelib::LruAllocator::RemoveCbData&) { nEvictions_++; });
-//     _config.setCacheSize(20 * 1024 * 1024);
-//     _config.enablePoolRebalancing(nullptr, std::chrono::seconds{0});
-//     facebook::cachelib::LruAllocator::NvmCacheConfig nvmConfig;
-//     nvmConfig = opts.nvmConfig_;
-//     _config.enableNvmCache(nvmConfig);
-//     std::unique_ptr<facebook::cachelib::LruAllocator>cache_;
-//     cache_.reset();
-//     cache_ = std::make_unique<facebook::cachelib::LruAllocator>(_config);
-//     cache_->addPool("default", 8 * 1024 * 1024, poolAllocsizes_);
-//     return std::make_shared<NVMSecondaryCache>(*cache_,opts);
-// }
+    nvmConfig.navyConfig.setSimpleFile(opts.fileName, opts.fileSize, opts.truncateFile /*optional*/);
+    nvmConfig.navyConfig.setDeviceMetadataSize(opts.deviceMetadataSize);
+    nvmConfig.navyConfig.setBlockSize(opts.blockSize);
+    nvmConfig.navyConfig.setNavyReqOrderingShards(opts.navyReqOrderingShards);
+
+    nvmConfig.navyConfig.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
+
+    nvmConfig.navyConfig.enableRandomAdmPolicy()
+        .setAdmProbability(opts.admProbability);
+
+    nvmConfig.navyConfig.blockCache().setRegionSize(opts.regionSize);
+
+    nvmConfig.navyConfig.bigHash()
+        .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
+        .setBucketSize(opts.bigHashBucketSize)
+        .setBucketBfSize(opts.bigHashBucketBfSize);
+        
+    _config.enableNvmCache(nvmConfig);
+    std::unique_ptr<facebook::cachelib::LruAllocator>cache_;
+    cache_.reset();
+    cache_ = std::make_unique<facebook::cachelib::LruAllocator>(_config);
+    cache_->addPool("default", 8 * 1024 * 1024, poolAllocsizes_);
+    return std::make_shared<NVMSecondaryCache>(*cache_,opts);
+}
 
 }  // namespace ROCKSDB_NAMESPACE

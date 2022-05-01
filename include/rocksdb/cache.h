@@ -33,11 +33,6 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 
-#include <cachelib/allocator/CacheTraits.h>
-#include <cachelib/allocator/CacheAllocator.h>
-#include <cachelib/allocator/nvmcache/NvmCache.h>
-#include <cachelib/allocator/nvmcache/NavyConfig.h>
-
 namespace ROCKSDB_NAMESPACE {
 
 class Cache;
@@ -170,11 +165,25 @@ struct LRUSecondaryCacheOptions : LRUCacheOptions {
 // NVMCache. The LRUCacheOptions.secondary_cache is not used and
 // should not be set.
 struct NVMSecondaryCacheOptions {
-
-  using CacheT = facebook::cachelib::CacheAllocator<facebook::cachelib::LruCacheTrait>;
-  using NvmCacheT = facebook::cachelib::NvmCache<CacheT>;
-  using NvmCacheConfig = typename NvmCacheT::Config;
-  NvmCacheConfig nvmConfig_{};
+    /*Device setting (simple file)*/
+    std::string fileName ;
+    uint64_t fileSize = 100 * 1024ULL * 1024ULL;
+    bool truncateFile = false;
+    uint64_t deviceMetadataSize = 4 * 1024 * 1024;
+    uint64_t blockSize = 1024;
+    uint64_t navyReqOrderingShards = 10;
+    /*Job scheduler*/
+    unsigned int readerThreads = 24;
+    unsigned int writerThreads = 24;
+    /*Admission Policy(set to random)*/
+    double admProbability = 0.5;
+    /*Block Cache*/
+    uint32_t regionSize = 4 * 1024 * 1024;
+    /*Big Hash*/
+    unsigned int sizePct = 50;
+    uint64_t smallItemMaxSize = 1024;
+    uint32_t bigHashBucketSize = 1024;
+    uint64_t bigHashBucketBfSize = 8;
   // The compression method (if any) that is used to compress data.
   CompressionType compression_type = CompressionType::kLZ4Compression;
 
@@ -203,28 +212,34 @@ struct NVMSecondaryCacheOptions {
     /*compression type*/
     CompressionType _compression_type = CompressionType::kLZ4Compression,
     uint32_t _compress_format_version = 2)
-    : nvmConfig_(nvmConfig_.validateAndSetDefaults()),
-      compression_type(_compression_type),
-      compress_format_version(_compress_format_version) {
-
-      nvmConfig_.navyConfig.setSimpleFile(_fileName, _fileSize, _truncateFile /*optional*/);
-      nvmConfig_.navyConfig.setDeviceMetadataSize(_deviceMetadataSize);
-      nvmConfig_.navyConfig.setBlockSize(_blockSize);
-      nvmConfig_.navyConfig.setNavyReqOrderingShards(_navyReqOrderingShards);
-
-      nvmConfig_.navyConfig.setReaderAndWriterThreads(_readerThreads, _writerThreads);
-
-      nvmConfig_.navyConfig.enableRandomAdmPolicy()
-         .setAdmProbability(_admProbability);
-
-      nvmConfig_.navyConfig.blockCache().setRegionSize(_regionSize);
-
-      nvmConfig_.navyConfig.bigHash()
-          .setSizePctAndMaxItemSize(_sizePct, _smallItemMaxSize)
-          .setBucketSize(_bigHashBucketSize)
-          .setBucketBfSize(_bigHashBucketBfSize);
+    : fileName(_fileName), fileSize(_fileSize), truncateFile(_truncateFile), deviceMetadataSize(_deviceMetadataSize),
+      blockSize(_blockSize), navyReqOrderingShards(_navyReqOrderingShards), readerThreads(_readerThreads),
+      writerThreads(_writerThreads), admProbability(_admProbability), regionSize(_regionSize), sizePct(_sizePct),
+      smallItemMaxSize(_smallItemMaxSize), bigHashBucketSize(_bigHashBucketSize), bigHashBucketBfSize(_bigHashBucketBfSize),
+      compression_type(_compression_type), compress_format_version(_compress_format_version) {
     }
 };
+// EXPERIMENTAL
+// Create a new Secondary Cache that is implemented on top of NVMCache.
+extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
+    /*Device setting (simple file)*/
+    std::string _fileName , uint64_t _fileSize = 100 * 1024ULL * 1024ULL, bool _truncateFile = false,
+    uint64_t _deviceMetadataSize = 4 * 1024 * 1024, uint64_t _blockSize = 1024, uint64_t _navyReqOrderingShards = 10,
+    /*Job scheduler*/
+    unsigned int _readerThreads = 24, unsigned int _writerThreads = 24, 
+    /*Admission Policy(set to random)*/
+    double _admProbability = 0.5,
+    /*Block Cache*/
+    uint32_t _regionSize = 4 * 1024 * 1024,
+    /*Big Hash*/
+    unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 1024, 
+    uint32_t _bigHashBucketSize = 1024, uint64_t _bigHashBucketBfSize = 8,
+    /*compression type*/
+    CompressionType _compression_type = CompressionType::kLZ4Compression,
+    uint32_t _compress_format_version = 2);
+
+extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
+    const NVMSecondaryCacheOptions& opts);
 
 
 // EXPERIMENTAL
