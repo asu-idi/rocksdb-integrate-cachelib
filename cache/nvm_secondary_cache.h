@@ -61,7 +61,7 @@ class NVMSecondaryCache : public SecondaryCache {
   // NVMSecondaryCache(navy::NavyConfig navyConfig, CacheT::ItemDestructor *itemDestructor, bool truncateItemToOriginalAllocSizeInNvm = false,
   //   bool enableFastNegativeLookups = false, bool truncate = false);
   // NVMSecondaryCache(const ItemDestructor& itemDestructor, NvmCacheConfig config, CacheT& cache, bool truncate = false);
-  NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options);
+  NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig);
 
   virtual ~NVMSecondaryCache() override;
 
