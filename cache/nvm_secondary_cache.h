@@ -84,8 +84,10 @@ class NVMSecondaryCache : public SecondaryCache {
   // std::shared_ptr<Cache> cache_;
   // NVMSecondaryCacheOptions cache_options_;
   CacheT& cache_;
-  NVMSecondaryCacheOptions nvmConfig_{};
+  NVMSecondaryCacheOptions nvmSecondaryConfig_{};
+  NvmCacheConfig nvmConfig_{};
   std::unique_ptr<NvmCacheT> nvmCache_;
+
 };
 
 }  // namespace ROCKSDB_NAMESPACE

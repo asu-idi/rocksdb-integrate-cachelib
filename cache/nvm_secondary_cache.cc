@@ -19,9 +19,9 @@ namespace ROCKSDB_NAMESPACE {
 //     nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_, truncate, itemDestructor_);
 // }
 
-NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options)
-        :cache_(cache),nvmConfig_(options) {
-    nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_.nvmConfig_, false, nullptr);
+NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig)
+        :cache_(cache),nvmSecondaryConfig_(options),nvmConfig_(nvmconfig) {
+    nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_, false, nullptr);
 }
 
 
@@ -119,13 +119,13 @@ std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(const NVMSecondaryCacheOpti
         .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
         .setBucketSize(opts.bigHashBucketSize)
         .setBucketBfSize(opts.bigHashBucketBfSize);
-        
+
     _config.enableNvmCache(nvmConfig);
     std::unique_ptr<facebook::cachelib::LruAllocator>cache_;
     cache_.reset();
     cache_ = std::make_unique<facebook::cachelib::LruAllocator>(_config);
     cache_->addPool("default", 8 * 1024 * 1024, poolAllocsizes_);
-    return std::make_shared<NVMSecondaryCache>(*cache_,opts);
+    return std::make_shared<NVMSecondaryCache>(*cache_,opts,nvmConfig);
 }
 
 }  // namespace ROCKSDB_NAMESPACE
