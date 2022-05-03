@@ -1068,7 +1068,7 @@ else()
 endif()
 
 set(TEST_FILE 
-    nvm_secondary_cache_test.cc)
+    cache/nvm_secondary_cache_test.cc)
 get_filename_component(exename ${TEST_FILE} NAME_WE)
 add_executable(${exename}${ARTIFACT_SUFFIX} ${TEST_FILE})
 target_link_libraries(${exename}${ARTIFACT_SUFFIX} ${THIRDPARTY_LIBS} ${ROCKSDB_LIB})
