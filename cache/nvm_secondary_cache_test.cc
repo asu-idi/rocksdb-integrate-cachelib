@@ -83,7 +83,6 @@ class NVMSecondaryCacheTest {
     opts.fileName = "/tmp/nvm";
 
     std::shared_ptr<SecondaryCache> cache = NewNVMSecondaryCache(opts);
-
     // Lookup an non-existent key.
     std::unique_ptr<SecondaryCacheResultHandle> handle0 =
         cache->Lookup("k0", test_item_creator, true);
@@ -91,10 +90,9 @@ class NVMSecondaryCacheTest {
 
     Random rnd(301);
     // Insert and Lookup the first item.
-    std::string str1;
-    test::CompressibleString(&rnd, 0.25, 1000, &str1);
+    std::string str1 ="test1";
     TestItem item1(str1.data(), str1.length());
-    // ASSERT_OK(cache->Insert("k1", &item1, &NVMSecondaryCacheTest::helper_));
+    cache->Insert("k1", &item1, &NVMSecondaryCacheTest::helper_);
     std::unique_ptr<SecondaryCacheResultHandle> handle1 =
         cache->Lookup("k1", test_item_creator, true);
     // ASSERT_NE(handle1, nullptr);
@@ -105,10 +103,10 @@ class NVMSecondaryCacheTest {
     // ASSERT_EQ(memcmp(val1->Buf(), item1.Buf(), item1.Size()), 0);
 
     // Insert and Lookup the second item.
-    std::string str2;
-    test::CompressibleString(&rnd, 0.5, 1000, &str2);
+    std::string str2="test2";
+
     TestItem item2(str2.data(), str2.length());
-    // ASSERT_OK(cache->Insert("k2", &item2, &NVMSecondaryCacheTest::helper_));
+    cache->Insert("k2", &item2, &NVMSecondaryCacheTest::helper_);
     std::unique_ptr<SecondaryCacheResultHandle> handle2 =
         cache->Lookup("k2", test_item_creator, true);
     // ASSERT_NE(handle2, nullptr);
