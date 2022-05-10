@@ -10,6 +10,9 @@
 #include "memory/memory_allocator.h"
 #include "util/compression.h"
 #include "util/string_util.h"
+#include <cachelib/allocator/CacheAllocator.h>
+#include <cachelib/allocator/nvmcache/NavyConfig.h>
+#include <cachelib/allocator/nvmcache/NvmItem.h>
 
 namespace ROCKSDB_NAMESPACE {
 

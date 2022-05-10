@@ -15,10 +15,12 @@
 #include "util/compression.h"
 // #include "rocksdb/cache.h"
 
-// #include <folly/Optional.h>
-#include <cachelib/allocator/CacheTraits.h>
+#include <folly/Optional.h>
 #include <cachelib/allocator/CacheAllocator.h>
+#include <cachelib/allocator/CacheAllocatorConfig.h>
+#include <cachelib/allocator/CacheTraits.h>
 #include <cachelib/allocator/nvmcache/NvmCache.h>
+
 
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
