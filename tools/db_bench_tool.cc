@@ -588,6 +588,15 @@ DEFINE_uint32(
     "compress_format_version == 2 -- decompressed size is included"
     " in the block header in varint32 format.");
 
+DEFINE_bool(use_nvm_secondary_cache, true,
+            "Use the NVMSecondaryCache as the secondary cache.");
+
+DEFINE_string(nvm_secondary_cache_filename, "/tmp/nvm",
+            "The place of NVMSecondaryCache");
+
+DEFINE_uint64(nvm_secondary_cache_filesize, 100 * 1024ULL * 1024ULL
+            "set fileSize of NVMSecondaryCache");
+
 DEFINE_int64(simcache_size, -1,
              "Number of bytes to use as a simcache of "
              "uncompressed data. Nagative value disables simcache.");
@@ -2836,6 +2845,13 @@ class Benchmark {
         secondary_cache_opts.compress_format_version =
             FLAGS_lru_secondary_cache_compress_format_version;
         opts.secondary_cache = NewLRUSecondaryCache(secondary_cache_opts);
+      }
+
+      if(FLAGS_use_nvm_secondary_cache) {
+        NVMSecondaryCacheOptions nvm_secondary_cache_opts;
+        nvm_secondary_cache_opts.fileName = FLAGS_nvm_secondary_cache_filename;
+        nvm_secondary_cache_opts.fileSize = FLAGS_nvm_secondary_cache_filesize;
+        opts.secondary_cache = NewNVMSecondaryCache(nvm_secondary_cache_opts);
       }
 
       return NewLRUCache(opts);
