@@ -1,7 +1,7 @@
 #include <chrono>
 #include <cstdio>
 #include <string>
-
+#include <iostream>
 
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
@@ -10,6 +10,7 @@
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/table.h"
 #include "rocksdb/rate_limiter.h"
+#include "rocksdb/secondary_cache.h"
 #include "rocksdb/utilities/options_util.h"
 
 using ROCKSDB_NAMESPACE::DB;
@@ -28,6 +29,8 @@ using ROCKSDB_NAMESPACE::NewNVMSecondaryCache;
 using ROCKSDB_NAMESPACE::Slice;
 using ROCKSDB_NAMESPACE::RateLimiter;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
+using ROCKSDB_NAMESPACE::Cache;
+using ROCKSDB_NAMESPACE::SecondaryCache;
 
 //Insert enough data
 //random read for 100 times
@@ -43,11 +46,11 @@ int main(){
     DB* db;
     Options options;
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
-    RateLimiter* _rate_limiter = NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo);
+    // std::shared_ptr<RateLimiter> _rate_limiter = make_shared<RateLimiter>(NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo));
 
     BlockBasedTableOptions table_options;
-    LRUCacheOptions opts(4 * 1024, 0, false, 0.5, nullptr, kDefaultToAdaptiveMutex, kDontChargeCacheMetadata);
-    std::shared_ptr<secondary_cache> _secondary_cache = NewNVMSecondaryCache(kDBPath+"/secondary");
+    LRUCacheOptions opts(4 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex, rocksdb::kDontChargeCacheMetadata);
+    std::shared_ptr<SecondaryCache> _secondary_cache = NewNVMSecondaryCache(kDBPath+"/secondary");
     opts.secondary_cache = _secondary_cache;
     std::shared_ptr<Cache> _cache = NewLRUCache(opts);
     table_options.block_cache = _cache;
@@ -58,7 +61,7 @@ int main(){
     options.table_factory.reset(NewBlockBasedTableFactory(table_options));
 
     options.create_if_missing = true;
-    options.rate_limiter = _rate_limiter;
+    options.rate_limiter.reset(NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo));
 
     Status s = DB::Open(options, kDBPath, &db);
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
