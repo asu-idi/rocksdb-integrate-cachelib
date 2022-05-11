@@ -31,7 +31,7 @@ LRUSecondaryCache::LRUSecondaryCache(
     : cache_options_(capacity, num_shard_bits, strict_capacity_limit,
                      high_pri_pool_ratio, memory_allocator, use_adaptive_mutex,
                      metadata_charge_policy, compression_type,
-                     compress_format_version) {
+                     compress_format_version),num_inserts_(0), num_lookups_(0) {
   cache_ = NewLRUCache(capacity, num_shard_bits, strict_capacity_limit,
                        high_pri_pool_ratio, memory_allocator,
                        use_adaptive_mutex, metadata_charge_policy);
@@ -52,7 +52,7 @@ std::unique_ptr<SecondaryCacheResultHandle> LRUSecondaryCache::Lookup(
   void* value = nullptr;
   size_t charge = 0;
   Status s;
-
+  num_lookups_++;
   if (cache_options_.compression_type == kNoCompression) {
     s = create_cb(ptr->get(), cache_->GetCharge(lru_handle), &value, &charge);
   } else {

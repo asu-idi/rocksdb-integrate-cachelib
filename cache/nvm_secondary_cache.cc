@@ -23,7 +23,7 @@ namespace ROCKSDB_NAMESPACE {
 // }
 
 NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig)
-        :cache_(cache),nvmSecondaryConfig_(options),nvmConfig_(nvmconfig) {
+        :cache_(cache),nvmSecondaryConfig_(options),nvmConfig_(nvmconfig),num_inserts_(0), num_lookups_(0){
     nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_, false, nullptr);
 }
 
@@ -47,6 +47,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
     size_t charge = nvm_handle->getSize();
     // convert cachelib handle to secondarycachehandle
     handle.reset(new NVMSecondaryCacheResultHandle(value, charge));
+    num_lookups_++;
     return handle;
 }
 
@@ -55,6 +56,7 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     if(key.empty()){
         return Status::Corruption("Error with empty key.");
     }
+    num_inserts_++;
     // convert Slice to folly::StringPiece(std::string)
     std::string key_;
     key_.append(key.data(),key.size());

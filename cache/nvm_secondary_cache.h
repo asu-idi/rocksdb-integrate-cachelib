@@ -82,6 +82,10 @@ class NVMSecondaryCache : public SecondaryCache {
 
   std::string GetPrintableOptions() const override;
 
+  uint32_t num_inserts() { return num_inserts_; }
+
+  uint32_t num_lookups() { return num_lookups_; }
+
  private:
   // std::shared_ptr<Cache> cache_;
   // NVMSecondaryCacheOptions cache_options_;
@@ -89,6 +93,8 @@ class NVMSecondaryCache : public SecondaryCache {
   NVMSecondaryCacheOptions nvmSecondaryConfig_{};
   NvmCacheConfig nvmConfig_{};
   std::unique_ptr<NvmCacheT> nvmCache_;
+  uint32_t num_inserts_;
+  uint32_t num_lookups_;
 
 };
 

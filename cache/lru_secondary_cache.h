@@ -77,9 +77,15 @@ class LRUSecondaryCache : public SecondaryCache {
 
   std::string GetPrintableOptions() const override;
 
+  uint32_t num_inserts() { return num_inserts_; }
+
+  uint32_t num_lookups() { return num_lookups_; }
+
  private:
   std::shared_ptr<Cache> cache_;
   LRUSecondaryCacheOptions cache_options_;
+  uint32_t num_inserts_;
+  uint32_t num_lookups_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

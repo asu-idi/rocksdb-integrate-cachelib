@@ -10,7 +10,6 @@
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/table.h"
 #include "rocksdb/rate_limiter.h"
-#include "rocksdb/secondary_cache.h"
 #include "rocksdb/utilities/options_util.h"
 
 using ROCKSDB_NAMESPACE::DB;
@@ -25,20 +24,17 @@ using ROCKSDB_NAMESPACE::BlockBasedTableOptions;
 using ROCKSDB_NAMESPACE::CompactionFilter;
 using ROCKSDB_NAMESPACE::ConfigOptions;
 using ROCKSDB_NAMESPACE::NewLRUCache;
-using ROCKSDB_NAMESPACE::NewNVMSecondaryCache;
 using ROCKSDB_NAMESPACE::Slice;
 using ROCKSDB_NAMESPACE::RateLimiter;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
 using ROCKSDB_NAMESPACE::Cache;
-using ROCKSDB_NAMESPACE::SecondaryCache;
 //Insert enough data
 //random read for 100 times
 //measure time and record hit times
-
 #if defined(OS_WIN)
-std::string kDBPath = "C:\\Windows\\TEMP\\read_test";
+std::string kDBPath = "C:\\Windows\\TEMP\\non_secondary_test";
 #else
-std::string kDBPath = "/tmp/read_test";
+std::string kDBPath = "/tmp/non_secondary_test";
 #endif
 
 std::string rand_str(const int len)  
@@ -62,8 +58,8 @@ int main(){
 
     BlockBasedTableOptions table_options;
     LRUCacheOptions opts(4 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex, rocksdb::kDontChargeCacheMetadata);
-    std::shared_ptr<SecondaryCache> _secondary_cache = NewNVMSecondaryCache(kDBPath+"/secondary");
-    opts.secondary_cache = _secondary_cache;
+    // std::shared_ptr<SecondaryCache> _secondary_cache = NewNVMSecondaryCache(kDBPath+"/secondary");
+    // opts.secondary_cache = _secondary_cache;
     std::shared_ptr<Cache> _cache = NewLRUCache(opts);
     table_options.block_cache = _cache;
     table_options.block_size = 4 * 1024;
@@ -76,6 +72,7 @@ int main(){
     options.rate_limiter.reset(NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo));
 
     Status s = DB::Open(options, kDBPath, &db);
+
     std::string key;
     for(int i =0;i<100;i++){
         key = "key"+std::to_string(i);
@@ -89,9 +86,7 @@ int main(){
         begin = std::chrono::steady_clock::now();
         s = db->Get(ReadOptions(), key, &value);
         end = std::chrono::steady_clock::now();
-        std::cout << _secondary_cache.num_inserts()<<std::endl;
-        std::cout << _secondary_cache.num_lookups()<<std::endl;
-        std::cout << key << ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
     delete db;
     return 0;
