@@ -79,14 +79,11 @@ class SecondaryCache : public Customizable {
   // Wait for a collection of handles to become ready
   virtual void WaitAll(std::vector<SecondaryCacheResultHandle*> handles) = 0;
 
-  uint32_t num_inserts() { return num_inserts_; }
-
-  uint32_t num_lookups() { return num_lookups_; }
-  
   virtual std::string GetPrintableOptions() const override = 0;
-  private:
-  uint32_t num_inserts_;
-  uint32_t num_lookups_;
+
+  virtual uint32_t num_inserts() = 0;
+
+  virtual uint32_t num_lookups() = 0;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

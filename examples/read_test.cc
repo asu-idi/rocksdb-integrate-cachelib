@@ -89,8 +89,8 @@ int main(){
         begin = std::chrono::steady_clock::now();
         s = db->Get(ReadOptions(), key, &value);
         end = std::chrono::steady_clock::now();
-        std::cout << _secondary_cache.num_inserts()<<std::endl;
-        std::cout << _secondary_cache.num_lookups()<<std::endl;
+        std::cout << _secondary_cache->num_inserts()<<std::endl;
+        std::cout << _secondary_cache->num_lookups()<<std::endl;
         std::cout << key << ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
     delete db;
