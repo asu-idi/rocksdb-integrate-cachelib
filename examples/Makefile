@@ -18,6 +18,9 @@ CFLAGS += -Wstrict-prototypes
 
 all: simple_example column_families_example compact_files_example c_simple_example optimistic_transaction_example transaction_example compaction_filter_example options_file_example
 
+non_secondary_test: non_secondary_test.cc
+	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+
 read_test: read_test.cc
 	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
