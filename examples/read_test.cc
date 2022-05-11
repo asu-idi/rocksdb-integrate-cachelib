@@ -31,7 +31,6 @@ using ROCKSDB_NAMESPACE::RateLimiter;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
 using ROCKSDB_NAMESPACE::Cache;
 using ROCKSDB_NAMESPACE::SecondaryCache;
-
 //Insert enough data
 //random read for 100 times
 //measure time and record hit times
@@ -41,6 +40,19 @@ std::string kDBPath = "C:\\Windows\\TEMP\\read_test";
 #else
 std::string kDBPath = "/tmp/read_test";
 #endif
+
+std::string rand_str(const int len)  
+{
+    std::string str;
+    char c;
+    int idx;
+    for(idx = 0;idx < len;idx ++)
+    {
+        c = 'a' + rand()%26;
+        str.push_back(c);
+    }
+    return str;
+}
 
 int main(){
     DB* db;
@@ -64,17 +76,28 @@ int main(){
     options.rate_limiter.reset(NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo));
 
     Status s = DB::Open(options, kDBPath, &db);
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    s = db->Put(WriteOptions(), "key1", "value");
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    // s = db->Put(WriteOptions(), "key1", "value");
+    // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    // std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    // assert(s.ok());
+    // std::string value;
+    // // get value
+    // s = db->Get(ReadOptions(), "key1", &value);
+    // assert(s.ok());
+    // assert(value == "value");
+
+
+    for(int i =0;i<100;i++){
+        std::string key = "key"+reinterpret_cast<std::string>(i);
+        std::cout<< key << std::endl;
+        s = db->Put(WriteOptions(),key,rand_str(1000));
+    }
     assert(s.ok());
     std::string value;
-    // get value
     s = db->Get(ReadOptions(), "key1", &value);
     assert(s.ok());
-    assert(value == "value");
-
+    std::cout<< value << std::endl;
     delete db;
     return 0;
 }
