@@ -96,7 +96,7 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
     return s;
   }
   Slice val(ptr.get(), size);
-
+  
   std::string compressed_val;
   if (cache_options_.compression_type != kNoCompression) {
     CompressionOptions compression_opts;
@@ -121,7 +121,7 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
   }
 
   CacheAllocationPtr* buf = new CacheAllocationPtr(std::move(ptr));
-
+  num_inserts_++;
   return cache_->Insert(key, buf, size, DeletionCallback);
 }
 
