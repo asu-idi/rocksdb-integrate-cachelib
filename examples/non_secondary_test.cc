@@ -54,7 +54,7 @@ std::string rand_str(const int len)
 
 void save_data(int num, int64_t times){
     std::ofstream outdata; 
-    outdata.open("non_secondary_test_result.txt"); // opens the file
+    outdata.open("non_secondary_test_result.txt",std::ios::out|std::ios::app); // opens the file
     if( !outdata ) { // file couldn't be opened
         std::cerr << "Error: file could not be opened" << std::endl;
         exit(1);
