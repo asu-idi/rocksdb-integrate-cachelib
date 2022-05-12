@@ -42,6 +42,7 @@ LRUSecondaryCache::~LRUSecondaryCache() { cache_.reset(); }
 std::unique_ptr<SecondaryCacheResultHandle> LRUSecondaryCache::Lookup(
     const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
   std::unique_ptr<SecondaryCacheResultHandle> handle;
+  num_lookups_++;
   Cache::Handle* lru_handle = cache_->Lookup(key);
   if (lru_handle == nullptr) {
     return handle;
@@ -52,7 +53,6 @@ std::unique_ptr<SecondaryCacheResultHandle> LRUSecondaryCache::Lookup(
   void* value = nullptr;
   size_t charge = 0;
   Status s;
-  num_lookups_++;
   if (cache_options_.compression_type == kNoCompression) {
     s = create_cb(ptr->get(), cache_->GetCharge(lru_handle), &value, &charge);
   } else {
@@ -90,7 +90,7 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
   size_t size = (*helper->size_cb)(value);
   CacheAllocationPtr ptr =
       AllocateBlock(size, cache_options_.memory_allocator.get());
-
+  num_inserts_++;
   Status s = (*helper->saveto_cb)(value, 0, size, ptr.get());
   if (!s.ok()) {
     return s;
@@ -119,9 +119,7 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
     ptr = AllocateBlock(size, cache_options_.memory_allocator.get());
     memcpy(ptr.get(), compressed_val.data(), size);
   }
-
   CacheAllocationPtr* buf = new CacheAllocationPtr(std::move(ptr));
-  num_inserts_++;
   return cache_->Insert(key, buf, size, DeletionCallback);
 }
 

@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <cstdlib>
 
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
@@ -50,11 +52,21 @@ std::string rand_str(const int len)
     return str;
 }
 
+void save_data(int num, int64_t times){
+    std::ofstream outdata; 
+    outdata.open("non_secondary_test_result.txt"); // opens the file
+    if( !outdata ) { // file couldn't be opened
+        std::cerr << "Error: file could not be opened" << std::endl;
+        exit(1);
+    }
+    outdata << num << "," << times << std::endl;
+    outdata.close();
+}
 int main(){
     DB* db;
     Options options;
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
-    RateLimiter _rate_limiter = NewGenericRateLimiter(100, 100 * 1000, 10, RateLimiter::Mode::kAllIo);
+    RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kAllIo);
 
     BlockBasedTableOptions table_options;
     LRUCacheOptions opts(4 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex, rocksdb::kDontChargeCacheMetadata);
@@ -81,17 +93,18 @@ int main(){
         _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kWrite);
         s = db->Put(WriteOptions(),key,rand_str(1000));
         end = std::chrono::steady_clock::now();
-        std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    //     std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
     }
     std::cout << "GET" <<std::endl;
     std::string value;
     for(int i = 0;i<100;i++){
         key = "key"+std::to_string(rand()%100);
         begin = std::chrono::steady_clock::now();
-        _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kRead);
+        _rate_limiter->Request(100, rocksdb::Env::IO_LOW, nullptr, RateLimiter::OpType::kRead);
         s = db->Get(ReadOptions(), key, &value);
         end = std::chrono::steady_clock::now();
-        std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        // std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+        save_data(i,std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
     }
     delete db;
     return 0;
