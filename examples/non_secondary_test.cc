@@ -67,7 +67,6 @@ int main(){
     options.IncreaseParallelism();
     options.OptimizeLevelStyleCompaction();
     options.table_factory.reset(NewBlockBasedTableFactory(table_options));
-
     options.create_if_missing = true;
     options.rate_limiter.reset(_rate_limiter);
 
@@ -79,7 +78,7 @@ int main(){
         key = "key"+std::to_string(i);
         // std::cout<< key << std::endl;
         begin = std::chrono::steady_clock::now();
-        _rate_limiter->Request(1000, rocksdb::Env::IO_HIGH);
+        _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kWrite);
         s = db->Put(WriteOptions(),key,rand_str(1000));
         end = std::chrono::steady_clock::now();
         std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
@@ -89,7 +88,7 @@ int main(){
     for(int i = 0;i<100;i++){
         key = "key"+std::to_string(rand()%100);
         begin = std::chrono::steady_clock::now();
-        _rate_limiter->Request(1000, rocksdb::Env::IO_HIGH);
+        _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kRead);
         s = db->Get(ReadOptions(), key, &value);
         end = std::chrono::steady_clock::now();
         std::cout << key<< ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
