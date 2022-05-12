@@ -14,6 +14,7 @@
 #include "rocksdb/rate_limiter.h"
 #include "rocksdb/secondary_cache.h"
 #include "rocksdb/utilities/options_util.h"
+#include "rocksdb/advanced_options.h"
 
 using ROCKSDB_NAMESPACE::DB;
 using ROCKSDB_NAMESPACE::DBOptions;
@@ -33,6 +34,7 @@ using ROCKSDB_NAMESPACE::RateLimiter;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
 using ROCKSDB_NAMESPACE::Cache;
 using ROCKSDB_NAMESPACE::SecondaryCache;
+using ROCKSDB_NAMESPACE::CacheTier;
 //Insert enough data
 //random read for 100 times
 //measure time and record hit times
@@ -56,14 +58,14 @@ std::string rand_str(const int len)
     return str;
 }
 
-void save_data(int num, uint32_t num_inserts, uint32_t num_lookups, int64_t times){
+void save_data(std::string key, uint32_t num_inserts, uint32_t num_lookups, int64_t times){
     std::ofstream outdata; 
-    outdata.open("read_test_result.txt"); // opens the file
+    outdata.open("read_test_result.txt",std::ios::out|std::ios::app); // opens the file
     if( !outdata ) { // file couldn't be opened
         std::cerr << "Error: file could not be opened" << std::endl;
         exit(1);
     }
-    outdata << num << "," << num_inserts << "," << num_lookups << ","<< times << std::endl;
+    outdata << key << "," << num_inserts << "," << num_lookups << ","<< times << std::endl;
     outdata.close();
 }
 
@@ -80,7 +82,7 @@ int main(){
     std::shared_ptr<Cache> _cache = NewLRUCache(opts);
     table_options.block_cache = _cache;
     table_options.block_size = 4 * 1024;
-
+    options.lowest_used_cache_tier = CacheTier::kNonVolatileBlockTier;
     options.IncreaseParallelism();
     options.OptimizeLevelStyleCompaction();
     options.table_factory.reset(NewBlockBasedTableFactory(table_options));
@@ -104,7 +106,7 @@ int main(){
         _rate_limiter->Request(100, rocksdb::Env::IO_LOW, nullptr, RateLimiter::OpType::kRead);
         s = db->Get(ReadOptions(), key, &value);
         end = std::chrono::steady_clock::now();
-        save_data(i,_secondary_cache->num_inserts(),_secondary_cache->num_lookups(),std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
+        save_data(key,_secondary_cache->num_inserts(),_secondary_cache->num_lookups(),std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count());
         // std::cout << _secondary_cache->num_inserts()<<std::endl;
         // std::cout << _secondary_cache->num_lookups()<<std::endl;
         // std::cout << key << ": Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
