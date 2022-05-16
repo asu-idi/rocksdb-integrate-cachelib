@@ -35,6 +35,7 @@ using ROCKSDB_NAMESPACE::LRUCacheOptions;
 using ROCKSDB_NAMESPACE::Cache;
 using ROCKSDB_NAMESPACE::SecondaryCache;
 using ROCKSDB_NAMESPACE::CacheTier;
+using ROCKSDB_NAMESPACE::FlushOptions;
 //Insert enough data
 //random read for 100 times
 //measure time and record hit times
@@ -95,9 +96,10 @@ int main(){
     for(int i =0;i<100;i++){
         key = "key"+std::to_string(i);
         // std::cout<< key << std::endl;
-        _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kWrite);
+        // _rate_limiter->Request(100, rocksdb::Env::IO_HIGH, nullptr, RateLimiter::OpType::kWrite);
         s = db->Put(WriteOptions(),key,rand_str(1000));
     }
+    s = db->Flush(FlushOptions());
     std::string value;
     std::chrono::steady_clock::time_point begin,end;
     for(int i = 0;i<100;i++){
