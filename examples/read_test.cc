@@ -59,6 +59,10 @@ void save_data(int times, double throughout, double hit_rate, int insert){
     outdata.close();
 }
 
+void Compact(DB* db, const Slice& start, const Slice& limit) {
+  db->CompactRange(rocksdb::CompactRangeOptions(), &start, &limit);
+}
+
 int main(){
     DB* db;
     Options options;
@@ -94,6 +98,7 @@ int main(){
     options.rate_limiter.reset(_rate_limiter);
 
     Status s = DB::Open(options, kDBPath, &db);
+    Compact(db,"a","z");
     std::string key;
     std::chrono::steady_clock::time_point begin,end;
     std::string value;
