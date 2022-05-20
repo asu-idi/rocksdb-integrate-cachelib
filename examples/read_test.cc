@@ -65,17 +65,30 @@ int main(){
     //set rate limiter to limit IO rate to 100KB/s to simulate the cloud storage use cases
     RateLimiter* _rate_limiter = NewGenericRateLimiter(100*1024, 100 * 1000, 10, RateLimiter::Mode::kAllIo);
 
+    // BlockBasedTableOptions table_options;
+    // LRUCacheOptions opts(1024 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex, rocksdb::kDontChargeCacheMetadata);
+    // std::shared_ptr<SecondaryCache> _secondary_cache = NewNVMSecondaryCache("/tmp/cachelib/secondary");
+    // opts.secondary_cache = _secondary_cache;
+    // std::shared_ptr<Cache> _cache = NewLRUCache(opts);
+    // table_options.block_cache = _cache;
+    // table_options.block_size = 10 * 1024;
+    // options.lowest_used_cache_tier = CacheTier::kNonVolatileBlockTier;
+    // options.IncreaseParallelism();
+    // options.OptimizeLevelStyleCompaction();
+    // options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+    LRUCacheOptions opts(1024 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
+    std::shared_ptr<SecondaryCache> secondary_cache = rocksdb::NewLRUSecondaryCache(10*1024*1024);
+    opts.secondary_cache = secondary_cache;
+    std::shared_ptr<Cache> cache = NewLRUCache(opts);
     BlockBasedTableOptions table_options;
-    LRUCacheOptions opts(1024 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex, rocksdb::kDontChargeCacheMetadata);
-    std::shared_ptr<SecondaryCache> _secondary_cache = NewNVMSecondaryCache("/tmp/cachelib/secondary");
-    opts.secondary_cache = _secondary_cache;
-    std::shared_ptr<Cache> _cache = NewLRUCache(opts);
-    table_options.block_cache = _cache;
+    table_options.block_cache = cache;
     table_options.block_size = 10 * 1024;
-    options.lowest_used_cache_tier = CacheTier::kNonVolatileBlockTier;
-    options.IncreaseParallelism();
-    options.OptimizeLevelStyleCompaction();
-    options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+    options.write_buffer_size = 4090 * 4096;
+    options.target_file_size_base = 2 * 1024 * 1024;
+    options.max_bytes_for_level_base = 10 * 1024 * 1024;
+    options.max_open_files = 5000;
+    options.wal_recovery_mode = rocksdb::WALRecoveryMode::kTolerateCorruptedTailRecords;
+    options.compaction_pri = rocksdb::CompactionPri::kByCompensatedSize;
 
     options.create_if_missing = true;
     options.rate_limiter.reset(_rate_limiter);
@@ -98,7 +111,7 @@ int main(){
         read_size += value.size();
         end = std::chrono::steady_clock::now();
         if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()>=1000){
-            save_data(i,(double)read_size/i*1024*1024,(double)_secondary_cache->num_lookups()/read_times,_secondary_cache->num_inserts());
+            save_data(i,(double)read_size/i*1024*1024,(double)secondary_cache->num_lookups()/read_times,secondary_cache->num_inserts());
             begin = end;
             i++;
         }
