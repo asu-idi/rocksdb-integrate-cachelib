@@ -76,13 +76,13 @@ int main(){
     // options.IncreaseParallelism();
     // options.OptimizeLevelStyleCompaction();
     // options.table_factory.reset(NewBlockBasedTableFactory(table_options));
-    LRUCacheOptions opts(1024 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
-    std::shared_ptr<SecondaryCache> secondary_cache = rocksdb::NewLRUSecondaryCache(10*1024*1024);
+    LRUCacheOptions opts(20 * 1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
+    std::shared_ptr<SecondaryCache> secondary_cache = rocksdb::NewLRUSecondaryCache(100*1024);
     opts.secondary_cache = secondary_cache;
     std::shared_ptr<Cache> cache = NewLRUCache(opts);
     BlockBasedTableOptions table_options;
     table_options.block_cache = cache;
-    table_options.block_size = 10 * 1024;
+    table_options.block_size = 4 * 1024;
     options.write_buffer_size = 4090 * 4096;
     options.target_file_size_base = 2 * 1024 * 1024;
     options.max_bytes_for_level_base = 10 * 1024 * 1024;
