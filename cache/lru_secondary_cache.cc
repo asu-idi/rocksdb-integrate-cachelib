@@ -42,12 +42,11 @@ LRUSecondaryCache::~LRUSecondaryCache() { cache_.reset(); }
 std::unique_ptr<SecondaryCacheResultHandle> LRUSecondaryCache::Lookup(
     const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
   std::unique_ptr<SecondaryCacheResultHandle> handle;
-  num_lookups_++;
   Cache::Handle* lru_handle = cache_->Lookup(key);
   if (lru_handle == nullptr) {
     return handle;
   }
-
+  num_lookups_++;
   CacheAllocationPtr* ptr =
       reinterpret_cast<CacheAllocationPtr*>(cache_->Value(lru_handle));
   void* value = nullptr;
@@ -90,7 +89,6 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
   size_t size = (*helper->size_cb)(value);
   CacheAllocationPtr ptr =
       AllocateBlock(size, cache_options_.memory_allocator.get());
-  num_inserts_++;
   Status s = (*helper->saveto_cb)(value, 0, size, ptr.get());
   if (!s.ok()) {
     return s;
@@ -120,6 +118,7 @@ Status LRUSecondaryCache::Insert(const Slice& key, void* value,
     memcpy(ptr.get(), compressed_val.data(), size);
   }
   CacheAllocationPtr* buf = new CacheAllocationPtr(std::move(ptr));
+  num_inserts_++;
   return cache_->Insert(key, buf, size, DeletionCallback);
 }
 

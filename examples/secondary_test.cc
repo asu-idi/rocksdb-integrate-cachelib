@@ -67,6 +67,9 @@ void save_data(std::string key, uint32_t num_inserts, uint32_t num_lookups, int6
     outdata << key << "," << num_inserts << "," << num_lookups << ","<< times << std::endl;
     outdata.close();
 }
+void Compact(DB* db, const Slice& start, const Slice& limit) {
+  db->CompactRange(rocksdb::CompactRangeOptions(), &start, &limit);
+}
 
 int main(){
     DB* db;
@@ -109,7 +112,8 @@ int main(){
     std::cout<<secondary_cache->num_lookups()<<",2u"<<std::endl;
 
     std::cout<<"compact data"<<std::endl;
-    s = db->CompactRange(rocksdb::CompactionOptions(),"a","z");
+    // s = db->CompactRange(rocksdb::CompactionOptions(),"a","z");
+    Compact(db,"a","z");
     std::cout<<secondary_cache->num_inserts()<<",2u"<<std::endl;
     std::cout<<secondary_cache->num_lookups()<<",3u"<<std::endl;
 

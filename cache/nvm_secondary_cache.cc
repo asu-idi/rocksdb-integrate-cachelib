@@ -101,7 +101,7 @@ std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(const NVMSecondaryCacheOpti
     // std::atomic<size_t> nEvictions_{0};
     std::set<uint32_t> poolAllocsizes_{20 * 1024};
 
-    _config.enableCachePersistence("/tmp");
+    _config.enableCachePersistence("/tmp/cachelib");
     // _config.setRemoveCallback(
     //     [this](const facebook::cachelib::LruAllocator::RemoveCbData&) { nEvictions_++; });
     _config.setCacheSize(20 * 1024 * 1024);
