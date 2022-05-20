@@ -103,7 +103,7 @@ void save_data(int times, double throughout){
        "/tmp/rocksdb_data/0000294.sst", "/tmp/rocksdb_data/0000418.sst", "/tmp/rocksdb_data/0000590.sst", "/tmp/rocksdb_data/0000695.sst", "/tmp/rocksdb_data/0000823.sst", "/tmp/rocksdb_data/0000927.sst", "/tmp/rocksdb_data/0001029.sst", "/tmp/rocksdb_data/0001135.sst", "/tmp/rocksdb_data/0001244.sst", "/tmp/rocksdb_data/0001351.sst", "/tmp/rocksdb_data/0001448.sst", "/tmp/rocksdb_data/0001554.sst", "/tmp/rocksdb_data/0001665.sst",  
        "/tmp/rocksdb_data/0000297.sst", "/tmp/rocksdb_data/0000420.sst", "/tmp/rocksdb_data/0000591.sst", "/tmp/rocksdb_data/0000696.sst", "/tmp/rocksdb_data/0000833.sst", "/tmp/rocksdb_data/0000931.sst", "/tmp/rocksdb_data/0001030.sst", "/tmp/rocksdb_data/0001140.sst", "/tmp/rocksdb_data/0001245.sst", "/tmp/rocksdb_data/0001352.sst", "/tmp/rocksdb_data/0001449.sst", "/tmp/rocksdb_data/0001559.sst", "/tmp/rocksdb_data/0001666.sst",  
        "/tmp/rocksdb_data/0000298.sst", "/tmp/rocksdb_data/0000421.sst", "/tmp/rocksdb_data/0000592.sst", "/tmp/rocksdb_data/0000697.sst", "/tmp/rocksdb_data/0000836.sst", "/tmp/rocksdb_data/0000932.sst", "/tmp/rocksdb_data/0001035.sst", "/tmp/rocksdb_data/0001141.sst", "/tmp/rocksdb_data/0001246.sst", "/tmp/rocksdb_data/0001353.sst", "/tmp/rocksdb_data/0001454.sst", "/tmp/rocksdb_data/0001560.sst", "/tmp/rocksdb_data/0001667.sst",  
-       "/tmp/rocksdb_data/0000299.sst", "/tmp/rocksdb_data/0000443.sst", "/tmp/rocksdb_data/0000593.sst", "/tmp/rocksdb_data/0000698.sst", "/tmp/rocksdb_data/0000837.sst", "/tmp/rocksdb_data/0000933.sst", "/tmp/rocksdb_data/0001036.sst", "/tmp/rocksdb_data/0001142.sst", "/tmp/rocksdb_data/0001247.sst", "/tmp/rocksdb_data/0001358.sst", "/tmp/rocksdb_data/0001455.sst", "/tmp/rocksdb_data/0001561.sst", "/tmp/rocksdb_data/0001668.sst"}
+       "/tmp/rocksdb_data/0000299.sst", "/tmp/rocksdb_data/0000443.sst", "/tmp/rocksdb_data/0000593.sst", "/tmp/rocksdb_data/0000698.sst", "/tmp/rocksdb_data/0000837.sst", "/tmp/rocksdb_data/0000933.sst", "/tmp/rocksdb_data/0001036.sst", "/tmp/rocksdb_data/0001142.sst", "/tmp/rocksdb_data/0001247.sst", "/tmp/rocksdb_data/0001358.sst", "/tmp/rocksdb_data/0001455.sst", "/tmp/rocksdb_data/0001561.sst", "/tmp/rocksdb_data/0001668.sst"};
 
 int main(){
     DB* db;
@@ -142,8 +142,8 @@ int main(){
         read_times++;
         read_size += value.size();
         end = std::chrono::steady_clock::now();
-        if(end - begin >= 60s){
-            save_data(i,read_size/i);
+        if(std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()>=1000){
+            save_data(i,(double)read_size/i);
             begin = end;
             i++;
         }
