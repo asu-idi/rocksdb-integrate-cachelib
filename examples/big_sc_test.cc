@@ -41,7 +41,7 @@ using ROCKSDB_NAMESPACE::LRUSecondaryCacheOptions;
 #if defined(OS_WIN)
 std::string kDBPath = "C:\\Windows\\TEMP\\secondary_test";
 #else
-std::string kDBPath = "/tmp/rate_sc_test";
+std::string kDBPath = "/tmp/big_secondary_test";
 #endif
 
 std::string rand_str(const int len)  
@@ -59,7 +59,7 @@ std::string rand_str(const int len)
 
 void save_data(int times, double throughout,double readsize_throught,int num_insert,int num_lookup){
     std::ofstream outdata; 
-    outdata.open("sc_rate_result.txt",std::ios::out|std::ios::app); // opens the file
+    outdata.open("big_sc_result.txt",std::ios::out|std::ios::app); // opens the file
     if( !outdata ) { // file couldn't be opened
         std::cerr << "Error: file could not be opened" << std::endl;
         exit(1);
@@ -75,10 +75,10 @@ int main(){
     DB* db;
     Options options;
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
-    RateLimiter* _rate_limiter = NewGenericRateLimiter(1000*1024, 100 * 1000, 10, RateLimiter::Mode::kReadsOnly);
+    RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kReadsOnly);
 
     LRUCacheOptions opts(6100, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
-    std::shared_ptr<SecondaryCache> secondary_cache = NewLRUSecondaryCache(2048*1024);
+    std::shared_ptr<SecondaryCache> secondary_cache = NewLRUSecondaryCache(100*1024*1024);
     opts.secondary_cache = secondary_cache;
     std::shared_ptr<Cache> cache = NewLRUCache(opts);
     BlockBasedTableOptions table_options;
@@ -137,7 +137,6 @@ int main(){
             i++;
         }
     }
-    std::string value;
     std::cout<<"get key0"<<std::endl;
     key = "key"+std::to_string(0);
     s = db->Get(ReadOptions(),key,&value);

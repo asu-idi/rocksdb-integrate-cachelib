@@ -25,6 +25,12 @@ non_sc: non_sc_cache.cc
 sc_cache: sc_cache.cc
 	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
+big_sc_test: big_sc_test.cc
+	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+
+small_sc_test: small_sc_test.cc
+	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+
 write_data: write_data.cc
 	$(CXX) $(CXXFLAGS) $@.cc -o$@ ../build/librocksdb.a -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 

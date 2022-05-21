@@ -75,7 +75,7 @@ int main(){
     DB* db;
     Options options;
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
-    RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kAllIo);
+    RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kReadsOnly);
 
     LRUCacheOptions opts(6100, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
     std::shared_ptr<SecondaryCache> secondary_cache = NewLRUSecondaryCache(2048*1024);
@@ -117,7 +117,6 @@ int main(){
     std::cout<<secondary_cache->num_inserts()<<",2u"<<std::endl;
     std::cout<<secondary_cache->num_lookups()<<",3u"<<std::endl;
 
-    std::string value;
     std::chrono::steady_clock::time_point begin,end;
     const int times = 1000;
     int i =0;
