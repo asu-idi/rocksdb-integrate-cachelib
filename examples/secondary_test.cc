@@ -57,14 +57,14 @@ std::string rand_str(const int len)
     return str;
 }
 
-void save_data(std::string key, uint32_t num_inserts, uint32_t num_lookups, int64_t times){
+void save_data(int times, double throughout,double readsize_throught,int num_insert,int num_lookup){
     std::ofstream outdata; 
-    outdata.open("secondary_test_result.txt",std::ios::out|std::ios::app); // opens the file
+    outdata.open("sc_result.txt",std::ios::out|std::ios::app); // opens the file
     if( !outdata ) { // file couldn't be opened
         std::cerr << "Error: file could not be opened" << std::endl;
         exit(1);
     }
-    outdata << key << "," << num_inserts << "," << num_lookups << ","<< times << std::endl;
+    outdata << times << "," << throughout << "," << readsize_throught << "," << num_insert << "," << num_lookup <<std::endl;
     outdata.close();
 }
 void Compact(DB* db, const Slice& start, const Slice& limit) {
@@ -100,7 +100,7 @@ int main(){
     Status s = DB::Open(options, kDBPath, &db);
     std::cout<<"put data in db"<<std::endl;
     std::string key;
-    const int N = 6;
+    const int N = 1000;
     for(int i =0;i<N;i++){
         key = "key"+std::to_string(i);
         s = db->Put(WriteOptions(),key,rand_str(1007));
@@ -117,6 +117,26 @@ int main(){
     std::cout<<secondary_cache->num_inserts()<<",2u"<<std::endl;
     std::cout<<secondary_cache->num_lookups()<<",3u"<<std::endl;
 
+    std::string value;
+    std::chrono::steady_clock::time_point begin,end;
+    const int times = 1000;
+    int i =0;
+    int read_times = 0;
+    u_int64_t read_size = 0;
+    begin = std::chrono::steady_clock::now();
+    while(i<times){
+        key = "key"+std::to_string(rand()%1000);
+        _rate_limiter->Request(100, rocksdb::Env::IO_LOW, nullptr, RateLimiter::OpType::kRead);
+        s = db->Get(ReadOptions(),key,&value);
+        read_times++;
+        read_size += value.size();
+        end = std::chrono::steady_clock::now();
+        if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()>=1000){
+            save_data(i,(double)read_times/i,(double)read_size/i,secondary_cache->num_inserts(),secondary_cache->num_lookups());
+            begin = end;
+            i++;
+        }
+    }
     std::string value;
     std::cout<<"get key0"<<std::endl;
     key = "key"+std::to_string(0);
