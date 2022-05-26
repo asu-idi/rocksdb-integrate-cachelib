@@ -137,7 +137,6 @@ int main(){
             i++;
         }
     }
-    std::string value;
     std::cout<<"get key0"<<std::endl;
     key = "key"+std::to_string(0);
     s = db->Get(ReadOptions(),key,&value);
