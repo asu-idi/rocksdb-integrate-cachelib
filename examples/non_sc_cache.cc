@@ -77,7 +77,7 @@ int main(){
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
     RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kReadsOnly);
 
-    LRUCacheOptions opts(6100, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
+    LRUCacheOptions opts(4*1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
     std::shared_ptr<Cache> cache = NewLRUCache(opts);
     BlockBasedTableOptions table_options;
     table_options.block_cache = cache;
@@ -98,10 +98,10 @@ int main(){
     Status s = DB::Open(options, kDBPath, &db);
     std::cout<<"put data in db"<<std::endl;
     std::string key;
-    const int N = 1000;
+    const int N = 100;
     for(int i =0;i<N;i++){
         key = "key"+std::to_string(i);
-        s = db->Put(WriteOptions(),key,rand_str(1007));
+        s = db->Put(WriteOptions(),key,rand_str(1000));
     }
 
     std::cout<<"flush data in db"<<std::endl;
@@ -119,7 +119,7 @@ int main(){
     u_int64_t read_size = 0;
     begin = std::chrono::steady_clock::now();
     while(i<times){
-        key = "key"+std::to_string(rand()%1000);
+        key = "key"+std::to_string(rand()%N);
         _rate_limiter->Request(100, rocksdb::Env::IO_LOW, nullptr, RateLimiter::OpType::kRead);
         s = db->Get(ReadOptions(),key,&value);
         read_times++;

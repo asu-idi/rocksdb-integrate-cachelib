@@ -77,8 +77,8 @@ int main(){
     //set rate limiter to limit IO rate to 100B/s to simulate the cloud storage use cases
     RateLimiter* _rate_limiter = NewGenericRateLimiter(1000, 100 * 1000, 10, RateLimiter::Mode::kReadsOnly);
 
-    LRUCacheOptions opts(6100, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
-    std::shared_ptr<SecondaryCache> secondary_cache = NewLRUSecondaryCache(2048*1024);
+    LRUCacheOptions opts(4*1024, 0, false, 0.5, nullptr, rocksdb::kDefaultToAdaptiveMutex,rocksdb::kDontChargeCacheMetadata);
+    std::shared_ptr<SecondaryCache> secondary_cache = NewLRUSecondaryCache(100*1024);
     opts.secondary_cache = secondary_cache;
     std::shared_ptr<Cache> cache = NewLRUCache(opts);
     BlockBasedTableOptions table_options;
@@ -100,16 +100,16 @@ int main(){
     Status s = DB::Open(options, kDBPath, &db);
     std::cout<<"put data in db"<<std::endl;
     std::string key;
-    const int N = 1000;
+    const int N = 100;
     for(int i =0;i<N;i++){
         key = "key"+std::to_string(i);
-        s = db->Put(WriteOptions(),key,rand_str(1007));
+        s = db->Put(WriteOptions(),key,rand_str(1000));
     }
 
     std::cout<<"flush data in db"<<std::endl;
     s = db->Flush(FlushOptions());
-    std::cout<<secondary_cache->num_inserts()<<",1u"<<std::endl;
-    std::cout<<secondary_cache->num_lookups()<<",2u"<<std::endl;
+    std::cout<<secondary_cache->num_inserts()<<std::endl;
+    std::cout<<secondary_cache->num_lookups()<<std::endl;
 
     std::cout<<"compact data"<<std::endl;
     // s = db->CompactRange(rocksdb::CompactionOptions(),"a","z");
@@ -117,6 +117,7 @@ int main(){
     std::cout<<secondary_cache->num_inserts()<<",2u"<<std::endl;
     std::cout<<secondary_cache->num_lookups()<<",3u"<<std::endl;
 
+    std::string value;
     std::chrono::steady_clock::time_point begin,end;
     const int times = 1000;
     int i =0;
@@ -124,7 +125,7 @@ int main(){
     u_int64_t read_size = 0;
     begin = std::chrono::steady_clock::now();
     while(i<times){
-        key = "key"+std::to_string(rand()%1000);
+        key = "key"+std::to_string(rand()%N);
         _rate_limiter->Request(100, rocksdb::Env::IO_LOW, nullptr, RateLimiter::OpType::kRead);
         s = db->Get(ReadOptions(),key,&value);
         read_times++;
@@ -136,7 +137,7 @@ int main(){
             i++;
         }
     }
-    std::string value;
+
     std::cout<<"get key0"<<std::endl;
     key = "key"+std::to_string(0);
     s = db->Get(ReadOptions(),key,&value);
