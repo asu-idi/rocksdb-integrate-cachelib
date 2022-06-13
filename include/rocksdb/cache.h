@@ -175,6 +175,68 @@ extern std::shared_ptr<SecondaryCache> NewLRUSecondaryCache(
 extern std::shared_ptr<SecondaryCache> NewLRUSecondaryCache(
     const LRUSecondaryCacheOptions& opts);
 
+struct NVMSecondaryCacheOptions {
+  /*Device setting (simple file)*/
+  std::string fileName ;
+  uint64_t fileSize = 100 * 1024ULL * 1024ULL;
+  uint64_t deviceMetadataSize = 4 * 1024 * 1024;
+  uint64_t blockSize = 1024;
+  uint64_t navyReqOrderingShards = 10;
+  /*Job scheduler*/
+  unsigned int readerThreads = 24;
+  unsigned int writerThreads = 24;
+  /*Admission Policy(set to random)*/
+  double admProbability = 0.5;
+  /*Block Cache*/
+  uint32_t regionSize = 4 * 1024 * 1024;
+  /*Big Hash*/
+  unsigned int sizePct = 50;
+  uint64_t smallItemMaxSize = 1024;
+  uint32_t bigHashBucketSize = 1024;
+  uint64_t bigHashBucketBfSize = 8;
+
+  NVMSecondaryCacheOptions() {}
+  // navyconfig
+  NVMSecondaryCacheOptions(
+    /*Device setting (simple file)*/
+    std::string _fileName , uint64_t _fileSize = 100 * 1024ULL * 1024ULL,
+    uint64_t _deviceMetadataSize = 4 * 1024 * 1024, uint64_t _blockSize = 1024, uint64_t _navyReqOrderingShards = 10,
+    /*Job scheduler*/
+    unsigned int _readerThreads = 24, unsigned int _writerThreads = 24, 
+    /*Admission Policy(set to random)*/
+    double _admProbability = 0.5,
+    /*Block Cache*/
+    uint32_t _regionSize = 4 * 1024 * 1024,
+    /*Big Hash*/
+    unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 1024, 
+    uint32_t _bigHashBucketSize = 1024, uint64_t _bigHashBucketBfSize = 8)
+    : fileName(_fileName), fileSize(_fileSize), deviceMetadataSize(_deviceMetadataSize),
+      blockSize(_blockSize), navyReqOrderingShards(_navyReqOrderingShards), readerThreads(_readerThreads),
+      writerThreads(_writerThreads), admProbability(_admProbability), regionSize(_regionSize), sizePct(_sizePct),
+      smallItemMaxSize(_smallItemMaxSize), bigHashBucketSize(_bigHashBucketSize), bigHashBucketBfSize(_bigHashBucketBfSize) {
+    }
+
+}
+
+// EXPERIMENTAL
+// Create a new Secondary Cache that is implemented on top of NVMCache.
+extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
+    /*Device setting (simple file)*/
+    std::string _fileName , uint64_t _fileSize = 100 * 1024ULL * 1024ULL, 
+    uint64_t _deviceMetadataSize = 4 * 1024 * 1024, uint64_t _blockSize = 1024, uint64_t _navyReqOrderingShards = 10,
+    /*Job scheduler*/
+    unsigned int _readerThreads = 24, unsigned int _writerThreads = 24, 
+    /*Admission Policy(set to random)*/
+    double _admProbability = 0.5,
+    /*Block Cache*/
+    uint32_t _regionSize = 4 * 1024 * 1024,
+    /*Big Hash*/
+    unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 1024, 
+    uint32_t _bigHashBucketSize = 1024, uint64_t _bigHashBucketBfSize = 8);
+
+extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
+    const NVMSecondaryCacheOptions& opts);
+
 // Similar to NewLRUCache, but create a cache based on CLOCK algorithm with
 // better concurrent performance in some cases. See util/clock_cache.cc for
 // more detail.
