@@ -17,8 +17,11 @@
 #include <cachelib/allocator/CacheAllocator.h>
 #include <cachelib/allocator/CacheAllocatorConfig.h>
 #include <cachelib/allocator/CacheTraits.h>
-#include <cachelib/allocator/nvmcache/NvmCache.h>
+#include <cachelib/allocator/CacheItem.h>
+#include <cachelib/allocator/Handle.h>
 #include <cachelib/allocator/nvmcache/CacheApiWrapper.h>
+#include <cachelib/allocator/nvmcache/NvmCache.h>
+#include <cachelib/allocator/nvmcache/NavyConfig.h>
 
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;

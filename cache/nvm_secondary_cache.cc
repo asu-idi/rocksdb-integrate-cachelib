@@ -11,6 +11,7 @@
 #include "util/compression.h"
 #include "util/string_util.h"
 
+#include <cachelib/allocator/CacheAllocator.h>
 
 namespace ROCKSDB_NAMESPACE {
 
