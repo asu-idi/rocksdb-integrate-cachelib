@@ -7,12 +7,10 @@
 
 #include <memory>
 
-#include "cache/lru_cache.h"
 #include "memory/memory_allocator.h"
 #include "rocksdb/secondary_cache.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
-#include "util/compression.h"
 
 #include <cachelib/allocator/CacheAllocator.h>
 #include <cachelib/allocator/CacheAllocatorConfig.h>
@@ -27,7 +25,8 @@ namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
 using CacheT = CacheAllocator<LruCacheTrait>;
 using NvmCacheT = NvmCache<CacheT>;
-using ItemHandle = typename NvmCacheT::ItemHandle;
+using NvmCacheConfig = typename NvmCacheT::Config;
+using ItemHandle = typename CacheT::ItemHandle;
 
 // NVM SecondaryCacheResultHandle catch the cachelib Itemhandle and convert it 
 // to rocksdb's handle
@@ -36,7 +35,7 @@ class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
     NVMSecondaryCacheResultHandle(ItemHandle *hdl)
         : handle(hdl) {
         if(handle){
-            value_ = reinterpret_cast<const char*>(handle->getMemory());
+            value_ = reinterpret_cast<char*>(handle->getMemory());
             size_ = handle->getSize();
         }else{
             value_ = nullptr;
@@ -57,7 +56,6 @@ class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
     void Wait() override { handle->wait(); }
 
     void* Value() override { 
-        assert(is_ready_);
         return value_; 
     }
 

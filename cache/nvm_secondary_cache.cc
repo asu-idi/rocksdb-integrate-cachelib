@@ -23,8 +23,8 @@ namespace ROCKSDB_NAMESPACE {
 
 NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig)
         :cache_(cache),nvmSecondaryConfig_(options){
-    nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_, false, nullptr);
-    defaultPool = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
+    nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmconfig, false, nullptr);
+    defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
 }
 
 
@@ -47,7 +47,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         void* value = nullptr;
         size_t charge = 0;
         Status s;
-        char* ptr = reinterpret_cast<const char*>(nvm_handle->getMemory());
+        char* ptr = reinterpret_cast<char*>(nvm_handle->getMemory());
         size_t size = DecodeFixed64(ptr);
         ptr += sizeof(uint64_t);
         s = create_cb(ptr, size, &value, &charge);
@@ -99,7 +99,7 @@ void NVMSecondaryCache::Erase(const Slice& key) {
     return;
 }
 
-void NVMSecondaryCache::WaitAll(std::vector<SecondaryCacheResultHandle*> handles) override {
+void NVMSecondaryCache::WaitAll(std::vector<SecondaryCacheResultHandle*> handles) {
     for (SecondaryCacheResultHandle* handle : handles) {
         if(!handle) {
             continue;
