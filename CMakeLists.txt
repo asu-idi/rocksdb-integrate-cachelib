@@ -184,8 +184,8 @@ else()
 endif()
 
 if(WITH_CACHELIB)
-  find_package(cachelib CONFIG REQUIRED)
-  add_definitions(-CACHELIB)
+  find_package(CacheLib CONFIG REQUIRED)
+  add_definitions(-DCACHELIB)
   list(APPEND THIRDPARTY_LIBS cachelib)
 endif()
 
