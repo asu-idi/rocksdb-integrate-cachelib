@@ -42,7 +42,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
     std::string key_;
     key_.append(key.data(),key.size());
     // return cachelib handle
-    auto nvm_handle = nvmCache_->find(key_);
+    ItemHandle nvm_handle = nvmCache_->find(key_);
     if(nvm_handle) {
         void* value = nullptr;
         size_t charge = 0;

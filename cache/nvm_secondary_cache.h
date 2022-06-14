@@ -88,7 +88,7 @@ class NVMSecondaryCache : public SecondaryCache {
 
     void Erase(const Slice& key) override;
 
-    void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override {}
+    void WaitAll(std::vector<SecondaryCacheResultHandle*> /*handles*/) override;
 
     std::string GetPrintableOptions() const override;
 
