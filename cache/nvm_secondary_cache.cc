@@ -24,7 +24,7 @@ namespace ROCKSDB_NAMESPACE {
 NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig)
         :cache_(cache),nvmSecondaryConfig_(options){
     nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmconfig, false, nullptr);
-    defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
+    defaultPool_ = cache_.addPool("default", cache_.getCacheMemoryStats().cacheSize);
 }
 
 
@@ -52,10 +52,8 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         ptr += sizeof(uint64_t);
         s = create_cb(ptr, size, &value, &charge);
         if(s.ok()) {
-            handle.reset(new NVMSecondaryCacheResultHandle(nvm_handle,value,charge));
-        } else {
-            nvm_handle->release();
-        }
+            handle.reset(new NVMSecondaryCacheResultHandle(&nvm_handle,value,charge));
+     	}
     }
     return handle;
 }

@@ -32,17 +32,7 @@ using ItemHandle = typename CacheT::ItemHandle;
 // to rocksdb's handle
 class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
     public:
-    NVMSecondaryCacheResultHandle(ItemHandle *hdl)
-        : handle(hdl) {
-        if(handle){
-            value_ = reinterpret_cast<char*>(handle->getMemory());
-            size_ = handle->getSize();
-        }else{
-            value_ = nullptr;
-            size_ = 0;
-        }
-    }
-
+    
     NVMSecondaryCacheResultHandle(ItemHandle *hdl, void* value,size_t size)
         : handle(hdl), value_(value), size_(size) {}
 
