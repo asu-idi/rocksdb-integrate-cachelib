@@ -12,12 +12,14 @@
 #include <algorithm>
 
 #include "db/db_impl/db_impl.h"
+#include "db/db_test_util.h"
 #include "db/log_writer.h"
 #include "rocksdb/advanced_options.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/file_system.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/mock_table.h"
+#include "table/unique_id_impl.h"
 #include "test_util/testharness.h"
 #include "test_util/testutil.h"
 #include "util/string_util.h"
@@ -49,7 +51,7 @@ class GenerateLevelFilesBriefTest : public testing::Test {
         kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
         kUnknownFileCreationTime, kUnknownFileChecksum,
         kUnknownFileChecksumFuncName, kDisableUserTimestamp,
-        kDisableUserTimestamp);
+        kDisableUserTimestamp, kNullUniqueId64x2);
     files_.push_back(f);
   }
 
@@ -158,7 +160,7 @@ class VersionStorageInfoTestBase : public testing::Test {
         Temperature::kUnknown, oldest_blob_file_number,
         kUnknownOldestAncesterTime, kUnknownFileCreationTime,
         kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kDisableUserTimestamp, kDisableUserTimestamp, kNullUniqueId64x2);
     f->compensated_file_size = file_size;
     vstorage_.AddFile(level, f);
   }
@@ -1144,7 +1146,7 @@ class VersionSetTestBase {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     reactive_versions_ = std::make_shared<ReactiveVersionSet>(
         dbname_, &db_options_, env_options_, table_cache_.get(),
         &write_buffer_manager_, &write_controller_, nullptr);
@@ -1248,7 +1250,7 @@ class VersionSetTestBase {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     EXPECT_OK(versions_->Recover(column_families_, false));
   }
 
@@ -1754,7 +1756,7 @@ TEST_F(VersionSetTest, WalAddition) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, /*read_only=*/false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1821,7 +1823,7 @@ TEST_F(VersionSetTest, WalCloseWithoutSync) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 2);
@@ -1874,7 +1876,7 @@ TEST_F(VersionSetTest, WalDeletion) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -1912,7 +1914,7 @@ TEST_F(VersionSetTest, WalDeletion) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -2030,7 +2032,7 @@ TEST_F(VersionSetTest, DeleteWalsBeforeNonExistingWalNumber) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 1);
@@ -2066,7 +2068,7 @@ TEST_F(VersionSetTest, DeleteAllWals) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(new_versions->Recover(column_families_, false));
     const auto& wals = new_versions->GetWalSet().GetWals();
     ASSERT_EQ(wals.size(), 0);
@@ -2108,7 +2110,7 @@ TEST_F(VersionSetTest, AtomicGroupWithWalEdits) {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     std::string db_id;
     ASSERT_OK(
         new_versions->Recover(column_families_, /*read_only=*/false, &db_id));
@@ -2162,7 +2164,7 @@ class VersionSetWithTimestampTest : public VersionSetTest {
         new VersionSet(dbname_, &db_options_, env_options_, table_cache_.get(),
                        &write_buffer_manager_, &write_controller_,
                        /*block_cache_tracer=*/nullptr, /*io_tracer=*/nullptr,
-                       /*db_session_id*/ ""));
+                       /*db_id*/ "", /*db_session_id*/ ""));
     ASSERT_OK(vset->Recover(column_families_, /*read_only=*/false,
                             /*db_id=*/nullptr));
     for (auto* cfd : *(vset->GetColumnFamilySet())) {
@@ -3222,11 +3224,11 @@ class VersionSetTestMissingFiles : public VersionSetTestBase,
       s = fs_->GetFileSize(fname, IOOptions(), &file_size, nullptr);
       ASSERT_OK(s);
       ASSERT_NE(0, file_size);
-      file_metas->emplace_back(file_num, /*file_path_id=*/0, file_size, ikey,
-                               ikey, 0, 0, false, Temperature::kUnknown, 0, 0,
-                               0, kUnknownFileChecksum,
-                               kUnknownFileChecksumFuncName,
-                               kDisableUserTimestamp, kDisableUserTimestamp);
+      file_metas->emplace_back(
+          file_num, /*file_path_id=*/0, file_size, ikey, ikey, 0, 0, false,
+          Temperature::kUnknown, 0, 0, 0, kUnknownFileChecksum,
+          kUnknownFileChecksumFuncName, kDisableUserTimestamp,
+          kDisableUserTimestamp, kNullUniqueId64x2);
     }
   }
 
@@ -3282,7 +3284,7 @@ TEST_F(VersionSetTestMissingFiles, ManifestFarBehindSst) {
         file_num, /*file_path_id=*/0, /*file_size=*/12, smallest_ikey,
         largest_ikey, 0, 0, false, Temperature::kUnknown, 0, 0, 0,
         kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kDisableUserTimestamp, kDisableUserTimestamp, kNullUniqueId64x2);
     added_files.emplace_back(0, meta);
   }
   WriteFileAdditionAndDeletionToManifest(
@@ -3338,7 +3340,7 @@ TEST_F(VersionSetTestMissingFiles, ManifestAheadofSst) {
         file_num, /*file_path_id=*/0, /*file_size=*/12, smallest_ikey,
         largest_ikey, 0, 0, false, Temperature::kUnknown, 0, 0, 0,
         kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-        kDisableUserTimestamp, kDisableUserTimestamp);
+        kDisableUserTimestamp, kDisableUserTimestamp, kNullUniqueId64x2);
     added_files.emplace_back(0, meta);
   }
   WriteFileAdditionAndDeletionToManifest(
@@ -3424,6 +3426,7 @@ TEST_F(VersionSetTestMissingFiles, NoFileMissing) {
 }
 
 TEST_F(VersionSetTestMissingFiles, MinLogNumberToKeep2PC) {
+  db_options_.allow_2pc = true;
   NewDB();
 
   SstInfo sst(100, kDefaultColumnFamilyName, "a");
@@ -3435,15 +3438,133 @@ TEST_F(VersionSetTestMissingFiles, MinLogNumberToKeep2PC) {
   edit.AddFile(0, file_metas[0]);
   edit.SetMinLogNumberToKeep(kMinWalNumberToKeep2PC);
   ASSERT_OK(LogAndApplyToDefaultCF(edit));
-  ASSERT_EQ(versions_->min_log_number_to_keep_2pc(), kMinWalNumberToKeep2PC);
+  ASSERT_EQ(versions_->min_log_number_to_keep(), kMinWalNumberToKeep2PC);
 
   for (int i = 0; i < 3; i++) {
     CreateNewManifest();
     ReopenDB();
-    ASSERT_EQ(versions_->min_log_number_to_keep_2pc(), kMinWalNumberToKeep2PC);
+    ASSERT_EQ(versions_->min_log_number_to_keep(), kMinWalNumberToKeep2PC);
   }
 }
 
+class ChargeFileMetadataTest : public DBTestBase {
+ public:
+  ChargeFileMetadataTest()
+      : DBTestBase("charge_file_metadata_test", /*env_do_fsync=*/true) {}
+};
+
+class ChargeFileMetadataTestWithParam
+    : public ChargeFileMetadataTest,
+      public testing::WithParamInterface<CacheEntryRoleOptions::Decision> {
+ public:
+  ChargeFileMetadataTestWithParam() {}
+};
+
+#ifndef ROCKSDB_LITE
+INSTANTIATE_TEST_CASE_P(
+    ChargeFileMetadataTestWithParam, ChargeFileMetadataTestWithParam,
+    ::testing::Values(CacheEntryRoleOptions::Decision::kEnabled,
+                      CacheEntryRoleOptions::Decision::kDisabled));
+
+TEST_P(ChargeFileMetadataTestWithParam, Basic) {
+  Options options;
+  BlockBasedTableOptions table_options;
+  CacheEntryRoleOptions::Decision charge_file_metadata = GetParam();
+  table_options.cache_usage_options.options_overrides.insert(
+      {CacheEntryRole::kFileMetadata, {/*.charged = */ charge_file_metadata}});
+  std::shared_ptr<TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>
+      file_metadata_charge_only_cache = std::make_shared<
+          TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>(
+          NewLRUCache(
+              4 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize(),
+              0 /* num_shard_bits */, true /* strict_capacity_limit */));
+  table_options.block_cache = file_metadata_charge_only_cache;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+  DestroyAndReopen(options);
+
+  // Create 128 file metadata, each of which is roughly 1024 bytes.
+  // This results in 1 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize()
+  // cache reservation for file metadata.
+  for (int i = 1; i <= 128; ++i) {
+    ASSERT_OK(Put(std::string(1024, 'a'), "va"));
+    ASSERT_OK(Put("b", "vb"));
+    ASSERT_OK(Flush());
+  }
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              1 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+
+  // Create another 128 file metadata.
+  // This increases the file metadata cache reservation to 2 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize().
+  for (int i = 1; i <= 128; ++i) {
+    ASSERT_OK(Put(std::string(1024, 'a'), "vva"));
+    ASSERT_OK(Put("b", "vvb"));
+    ASSERT_OK(Flush());
+  }
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              2 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+  // Compaction will create 1 new file metadata, obsolete and delete all 256
+  // file metadata above. This results in 1 *
+  // CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>::GetDummyEntrySize()
+  // cache reservation for file metadata.
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+  ASSERT_EQ("0,1", FilesPerLevel(0));
+
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+              1 * CacheReservationManagerImpl<
+                      CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+  } else {
+    EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(), 0);
+  }
+
+  // Destroying the db will delete the remaining 1 new file metadata
+  // This results in no cache reservation for file metadata.
+  Destroy(options);
+  EXPECT_EQ(file_metadata_charge_only_cache->GetCacheCharge(),
+            0 * CacheReservationManagerImpl<
+                    CacheEntryRole::kFileMetadata>::GetDummyEntrySize());
+
+  // Reopen the db with a smaller cache in order to test failure in allocating
+  // file metadata due to memory limit based on cache capacity
+  file_metadata_charge_only_cache = std::make_shared<
+      TargetCacheChargeTrackingCache<CacheEntryRole::kFileMetadata>>(
+      NewLRUCache(1 * CacheReservationManagerImpl<
+                          CacheEntryRole::kFileMetadata>::GetDummyEntrySize(),
+                  0 /* num_shard_bits */, true /* strict_capacity_limit */));
+  table_options.block_cache = file_metadata_charge_only_cache;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  Reopen(options);
+  ASSERT_OK(Put(std::string(1024, 'a'), "va"));
+  ASSERT_OK(Put("b", "vb"));
+  Status s = Flush();
+  if (charge_file_metadata == CacheEntryRoleOptions::Decision::kEnabled) {
+    EXPECT_TRUE(s.IsMemoryLimit());
+    EXPECT_TRUE(s.ToString().find(
+                    kCacheEntryRoleToCamelString[static_cast<std::uint32_t>(
+                        CacheEntryRole::kFileMetadata)]) != std::string::npos);
+    EXPECT_TRUE(s.ToString().find("memory limit based on cache capacity") !=
+                std::string::npos);
+  } else {
+    EXPECT_TRUE(s.ok());
+  }
+}
+#endif  // ROCKSDB_LITE
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {

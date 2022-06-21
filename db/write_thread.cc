@@ -389,6 +389,7 @@ void WriteThread::JoinBatchGroup(Writer* w) {
   }
 
   TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Wait", w);
+  TEST_SYNC_POINT_CALLBACK("WriteThread::JoinBatchGroup:Wait2", w);
 
   if (!linked_as_leader) {
     /**
@@ -468,6 +469,11 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
 
     if (w->protection_bytes_per_key != leader->protection_bytes_per_key) {
       // Do not mix writes with different levels of integrity protection.
+      break;
+    }
+
+    if (w->rate_limiter_priority != leader->rate_limiter_priority) {
+      // Do not mix writes with different rate limiter priorities.
       break;
     }
 

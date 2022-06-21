@@ -86,8 +86,10 @@ Status PessimisticTransactionDB::VerifyCFOptions(
         << " timestamp size is " << ts_sz << " bytes";
     return Status::InvalidArgument(oss.str());
   }
-  // TODO: Update this check once timestamp is supported.
-  return Status::NotSupported("Transaction DB does not support timestamp");
+  if (txn_db_options_.write_policy != WRITE_COMMITTED) {
+    return Status::NotSupported("Only WriteCommittedTxn supports timestamp");
+  }
+  return Status::OK();
 }
 
 Status PessimisticTransactionDB::Initialize(
@@ -442,7 +444,10 @@ Transaction* PessimisticTransactionDB::BeginInternalTransaction(
 Status PessimisticTransactionDB::Put(const WriteOptions& options,
                                      ColumnFamilyHandle* column_family,
                                      const Slice& key, const Slice& val) {
-  Status s;
+  Status s = FailIfCfEnablesTs(this, column_family);
+  if (!s.ok()) {
+    return s;
+  }
 
   Transaction* txn = BeginInternalTransaction(options);
   txn->DisableIndexing();
@@ -463,7 +468,10 @@ Status PessimisticTransactionDB::Put(const WriteOptions& options,
 Status PessimisticTransactionDB::Delete(const WriteOptions& wopts,
                                         ColumnFamilyHandle* column_family,
                                         const Slice& key) {
-  Status s;
+  Status s = FailIfCfEnablesTs(this, column_family);
+  if (!s.ok()) {
+    return s;
+  }
 
   Transaction* txn = BeginInternalTransaction(wopts);
   txn->DisableIndexing();
@@ -485,7 +493,10 @@ Status PessimisticTransactionDB::Delete(const WriteOptions& wopts,
 Status PessimisticTransactionDB::SingleDelete(const WriteOptions& wopts,
                                               ColumnFamilyHandle* column_family,
                                               const Slice& key) {
-  Status s;
+  Status s = FailIfCfEnablesTs(this, column_family);
+  if (!s.ok()) {
+    return s;
+  }
 
   Transaction* txn = BeginInternalTransaction(wopts);
   txn->DisableIndexing();
@@ -507,7 +518,10 @@ Status PessimisticTransactionDB::SingleDelete(const WriteOptions& wopts,
 Status PessimisticTransactionDB::Merge(const WriteOptions& options,
                                        ColumnFamilyHandle* column_family,
                                        const Slice& key, const Slice& value) {
-  Status s;
+  Status s = FailIfCfEnablesTs(this, column_family);
+  if (!s.ok()) {
+    return s;
+  }
 
   Transaction* txn = BeginInternalTransaction(options);
   txn->DisableIndexing();
@@ -533,6 +547,10 @@ Status PessimisticTransactionDB::Write(const WriteOptions& opts,
 
 Status WriteCommittedTxnDB::Write(const WriteOptions& opts,
                                   WriteBatch* updates) {
+  Status s = FailIfBatchHasTs(updates);
+  if (!s.ok()) {
+    return s;
+  }
   if (txn_db_options_.skip_concurrency_control) {
     return db_impl_->Write(opts, updates);
   } else {
@@ -543,6 +561,10 @@ Status WriteCommittedTxnDB::Write(const WriteOptions& opts,
 Status WriteCommittedTxnDB::Write(
     const WriteOptions& opts,
     const TransactionDBWriteOptimizations& optimizations, WriteBatch* updates) {
+  Status s = FailIfBatchHasTs(updates);
+  if (!s.ok()) {
+    return s;
+  }
   if (optimizations.skip_concurrency_control) {
     return db_impl_->Write(opts, updates);
   } else {
@@ -632,6 +654,69 @@ void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {
   auto it = transactions_.find(txn->GetName());
   assert(it != transactions_.end());
   transactions_.erase(it);
+}
+
+std::pair<Status, std::shared_ptr<const Snapshot>>
+PessimisticTransactionDB::CreateTimestampedSnapshot(TxnTimestamp ts) {
+  if (kMaxTxnTimestamp == ts) {
+    return std::make_pair(Status::InvalidArgument("invalid ts"), nullptr);
+  }
+  assert(db_impl_);
+  return db_impl_->CreateTimestampedSnapshot(kMaxSequenceNumber, ts);
+}
+
+std::shared_ptr<const Snapshot>
+PessimisticTransactionDB::GetTimestampedSnapshot(TxnTimestamp ts) const {
+  assert(db_impl_);
+  return db_impl_->GetTimestampedSnapshot(ts);
+}
+
+void PessimisticTransactionDB::ReleaseTimestampedSnapshotsOlderThan(
+    TxnTimestamp ts) {
+  assert(db_impl_);
+  db_impl_->ReleaseTimestampedSnapshotsOlderThan(ts);
+}
+
+Status PessimisticTransactionDB::GetTimestampedSnapshots(
+    TxnTimestamp ts_lb, TxnTimestamp ts_ub,
+    std::vector<std::shared_ptr<const Snapshot>>& timestamped_snapshots) const {
+  assert(db_impl_);
+  return db_impl_->GetTimestampedSnapshots(ts_lb, ts_ub, timestamped_snapshots);
+}
+
+Status SnapshotCreationCallback::operator()(SequenceNumber seq,
+                                            bool disable_memtable) {
+  assert(db_impl_);
+  assert(commit_ts_ != kMaxTxnTimestamp);
+
+  const bool two_write_queues =
+      db_impl_->immutable_db_options().two_write_queues;
+  assert(!two_write_queues || !disable_memtable);
+#ifdef NDEBUG
+  (void)two_write_queues;
+  (void)disable_memtable;
+#endif
+
+  const bool seq_per_batch = db_impl_->seq_per_batch();
+  if (!seq_per_batch) {
+    assert(db_impl_->GetLastPublishedSequence() <= seq);
+  } else {
+    assert(db_impl_->GetLastPublishedSequence() < seq);
+  }
+
+  // Create a snapshot which can also be used for write conflict checking.
+  auto ret = db_impl_->CreateTimestampedSnapshot(seq, commit_ts_);
+  snapshot_creation_status_ = ret.first;
+  snapshot_ = ret.second;
+  if (snapshot_creation_status_.ok()) {
+    assert(snapshot_);
+  } else {
+    assert(!snapshot_);
+  }
+  if (snapshot_ && snapshot_notifier_) {
+    snapshot_notifier_->SnapshotCreated(snapshot_.get());
+  }
+  return Status::OK();
 }
 
 }  // namespace ROCKSDB_NAMESPACE

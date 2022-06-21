@@ -5,6 +5,7 @@
 
 #include <array>
 #include <sstream>
+#include <string>
 
 #include "db/blob/blob_index.h"
 #include "db/blob/blob_log_format.h"
@@ -46,6 +47,177 @@ TEST_F(DBBlobBasicTest, GetBlob) {
   PinnableSlice result;
   ASSERT_TRUE(db_->Get(read_options, db_->DefaultColumnFamily(), key, &result)
                   .IsIncomplete());
+}
+
+TEST_F(DBBlobBasicTest, GetBlobFromCache) {
+  Options options = GetDefaultOptions();
+
+  LRUCacheOptions co;
+  co.capacity = 2048;
+  co.num_shard_bits = 2;
+  co.metadata_charge_policy = kDontChargeCacheMetadata;
+  auto backing_cache = NewLRUCache(co);
+
+  options.enable_blob_files = true;
+  options.blob_cache = backing_cache;
+
+  BlockBasedTableOptions block_based_options;
+  block_based_options.no_block_cache = false;
+  block_based_options.block_cache = backing_cache;
+  block_based_options.cache_index_and_filter_blocks = true;
+  options.table_factory.reset(NewBlockBasedTableFactory(block_based_options));
+
+  Reopen(options);
+
+  constexpr char key[] = "key";
+  constexpr char blob_value[] = "blob_value";
+
+  ASSERT_OK(Put(key, blob_value));
+
+  ASSERT_OK(Flush());
+
+  ReadOptions read_options;
+
+  read_options.fill_cache = false;
+
+  {
+    PinnableSlice result;
+
+    read_options.read_tier = kReadAllTier;
+    ASSERT_OK(db_->Get(read_options, db_->DefaultColumnFamily(), key, &result));
+    ASSERT_EQ(result, blob_value);
+
+    result.Reset();
+    read_options.read_tier = kBlockCacheTier;
+
+    // Try again with no I/O allowed. Since we didn't re-fill the cache, the
+    // blob itself can only be read from the blob file, so the read should
+    // return Incomplete.
+    ASSERT_TRUE(db_->Get(read_options, db_->DefaultColumnFamily(), key, &result)
+                    .IsIncomplete());
+    ASSERT_TRUE(result.empty());
+  }
+
+  read_options.fill_cache = true;
+
+  {
+    PinnableSlice result;
+
+    read_options.read_tier = kReadAllTier;
+    ASSERT_OK(db_->Get(read_options, db_->DefaultColumnFamily(), key, &result));
+    ASSERT_EQ(result, blob_value);
+
+    result.Reset();
+    read_options.read_tier = kBlockCacheTier;
+
+    // Try again with no I/O allowed. The table and the necessary blocks/blobs
+    // should already be in their respective caches.
+    ASSERT_OK(db_->Get(read_options, db_->DefaultColumnFamily(), key, &result));
+    ASSERT_EQ(result, blob_value);
+  }
+}
+
+TEST_F(DBBlobBasicTest, IterateBlobsFromCache) {
+  Options options = GetDefaultOptions();
+
+  LRUCacheOptions co;
+  co.capacity = 2048;
+  co.num_shard_bits = 2;
+  co.metadata_charge_policy = kDontChargeCacheMetadata;
+  auto backing_cache = NewLRUCache(co);
+
+  options.enable_blob_files = true;
+  options.blob_cache = backing_cache;
+
+  BlockBasedTableOptions block_based_options;
+  block_based_options.no_block_cache = false;
+  block_based_options.block_cache = backing_cache;
+  block_based_options.cache_index_and_filter_blocks = true;
+  options.table_factory.reset(NewBlockBasedTableFactory(block_based_options));
+
+  Reopen(options);
+
+  int num_blobs = 5;
+  std::vector<std::string> keys;
+  std::vector<std::string> blobs;
+
+  for (int i = 0; i < num_blobs; ++i) {
+    keys.push_back("key" + std::to_string(i));
+    blobs.push_back("blob" + std::to_string(i));
+    ASSERT_OK(Put(keys[i], blobs[i]));
+  }
+  ASSERT_OK(Flush());
+
+  ReadOptions read_options;
+
+  {
+    read_options.fill_cache = false;
+    read_options.read_tier = kReadAllTier;
+
+    std::unique_ptr<Iterator> iter(db_->NewIterator(read_options));
+    ASSERT_OK(iter->status());
+
+    int i = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ASSERT_OK(iter->status());
+      ASSERT_EQ(iter->key().ToString(), keys[i]);
+      ASSERT_EQ(iter->value().ToString(), blobs[i]);
+      ++i;
+    }
+    ASSERT_EQ(i, num_blobs);
+  }
+
+  {
+    read_options.fill_cache = false;
+    read_options.read_tier = kBlockCacheTier;
+
+    std::unique_ptr<Iterator> iter(db_->NewIterator(read_options));
+    ASSERT_OK(iter->status());
+
+    // Try again with no I/O allowed. Since we didn't re-fill the cache,
+    // the blob itself can only be read from the blob file, so iter->Valid()
+    // should be false.
+    iter->SeekToFirst();
+    ASSERT_NOK(iter->status());
+    ASSERT_FALSE(iter->Valid());
+  }
+
+  {
+    read_options.fill_cache = true;
+    read_options.read_tier = kReadAllTier;
+
+    std::unique_ptr<Iterator> iter(db_->NewIterator(read_options));
+    ASSERT_OK(iter->status());
+
+    // Read blobs from the file and refill the cache.
+    int i = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ASSERT_OK(iter->status());
+      ASSERT_EQ(iter->key().ToString(), keys[i]);
+      ASSERT_EQ(iter->value().ToString(), blobs[i]);
+      ++i;
+    }
+    ASSERT_EQ(i, num_blobs);
+  }
+
+  {
+    read_options.fill_cache = false;
+    read_options.read_tier = kBlockCacheTier;
+
+    std::unique_ptr<Iterator> iter(db_->NewIterator(read_options));
+    ASSERT_OK(iter->status());
+
+    // Try again with no I/O allowed. The table and the necessary blocks/blobs
+    // should already be in their respective caches.
+    int i = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ASSERT_OK(iter->status());
+      ASSERT_EQ(iter->key().ToString(), keys[i]);
+      ASSERT_EQ(iter->value().ToString(), blobs[i]);
+      ++i;
+    }
+    ASSERT_EQ(i, num_blobs);
+  }
 }
 
 TEST_F(DBBlobBasicTest, MultiGetBlobs) {
@@ -366,19 +538,26 @@ TEST_F(DBBlobBasicTest, GetBlob_CorruptIndex) {
   Reopen(options);
 
   constexpr char key[] = "key";
+  constexpr char blob[] = "blob";
 
-  // Fake a corrupt blob index.
-  const std::string blob_index("foobar");
-
-  WriteBatch batch;
-  ASSERT_OK(WriteBatchInternal::PutBlobIndex(&batch, 0, key, blob_index));
-  ASSERT_OK(db_->Write(WriteOptions(), &batch));
-
+  ASSERT_OK(Put(key, blob));
   ASSERT_OK(Flush());
+
+  SyncPoint::GetInstance()->SetCallBack(
+      "Version::Get::TamperWithBlobIndex", [](void* arg) {
+        Slice* const blob_index = static_cast<Slice*>(arg);
+        assert(blob_index);
+        assert(!blob_index->empty());
+        blob_index->remove_prefix(1);
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
 
   PinnableSlice result;
   ASSERT_TRUE(db_->Get(ReadOptions(), db_->DefaultColumnFamily(), key, &result)
                   .IsCorruption());
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 TEST_F(DBBlobBasicTest, MultiGetBlob_CorruptIndex) {
@@ -401,16 +580,26 @@ TEST_F(DBBlobBasicTest, MultiGetBlob_CorruptIndex) {
   }
 
   constexpr char key[] = "key";
-  {
-    // Fake a corrupt blob index.
-    const std::string blob_index("foobar");
-    WriteBatch batch;
-    ASSERT_OK(WriteBatchInternal::PutBlobIndex(&batch, 0, key, blob_index));
-    ASSERT_OK(db_->Write(WriteOptions(), &batch));
-    keys[kNumOfKeys] = Slice(static_cast<const char*>(key), sizeof(key) - 1);
-  }
+  constexpr char blob[] = "blob";
+  ASSERT_OK(Put(key, blob));
+  keys[kNumOfKeys] = key;
 
   ASSERT_OK(Flush());
+
+  SyncPoint::GetInstance()->SetCallBack(
+      "Version::MultiGet::TamperWithBlobIndex", [&key](void* arg) {
+        KeyContext* const key_context = static_cast<KeyContext*>(arg);
+        assert(key_context);
+        assert(key_context->key);
+
+        if (*(key_context->key) == key) {
+          Slice* const blob_index = key_context->value;
+          assert(blob_index);
+          assert(!blob_index->empty());
+          blob_index->remove_prefix(1);
+        }
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
 
   std::array<PinnableSlice, kNumOfKeys + 1> values;
   std::array<Status, kNumOfKeys + 1> statuses;
@@ -425,6 +614,9 @@ TEST_F(DBBlobBasicTest, MultiGetBlob_CorruptIndex) {
       ASSERT_TRUE(statuses[i].IsCorruption());
     }
   }
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 TEST_F(DBBlobBasicTest, MultiGetBlob_ExceedSoftLimit) {
@@ -733,6 +925,14 @@ TEST_F(DBBlobBasicTest, Properties) {
                                   &live_blob_file_size));
   ASSERT_EQ(live_blob_file_size, total_expected_size);
 
+  // Total amount of garbage in live blob files
+  {
+    uint64_t live_blob_file_garbage_size = 0;
+    ASSERT_TRUE(db_->GetIntProperty(DB::Properties::kLiveBlobFileGarbageSize,
+                                    &live_blob_file_garbage_size));
+    ASSERT_EQ(live_blob_file_garbage_size, 0);
+  }
+
   // Total size of all blob files across all versions
   // Note: this should be the same as above since we only have one
   // version at this point.
@@ -768,6 +968,14 @@ TEST_F(DBBlobBasicTest, Properties) {
       << "\nBlob file space amplification: " << expected_space_amp << '\n';
 
   ASSERT_EQ(blob_stats, oss.str());
+
+  // Total amount of garbage in live blob files
+  {
+    uint64_t live_blob_file_garbage_size = 0;
+    ASSERT_TRUE(db_->GetIntProperty(DB::Properties::kLiveBlobFileGarbageSize,
+                                    &live_blob_file_garbage_size));
+    ASSERT_EQ(live_blob_file_garbage_size, expected_garbage_size);
+  }
 }
 
 TEST_F(DBBlobBasicTest, PropertiesMultiVersion) {

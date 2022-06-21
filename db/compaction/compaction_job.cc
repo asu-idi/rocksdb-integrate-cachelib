@@ -31,6 +31,7 @@
 #include "db/dbformat.h"
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
+#include "db/history_trimming_iterator.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
 #include "db/memtable.h"
@@ -63,6 +64,7 @@
 #include "table/block_based/block_based_table_factory.h"
 #include "table/merging_iterator.h"
 #include "table/table_builder.h"
+#include "table/unique_id_impl.h"
 #include "test_util/sync_point.h"
 #include "util/coding.h"
 #include "util/hash.h"
@@ -416,20 +418,21 @@ CompactionJob::CompactionJob(
     int job_id, Compaction* compaction, const ImmutableDBOptions& db_options,
     const MutableDBOptions& mutable_db_options, const FileOptions& file_options,
     VersionSet* versions, const std::atomic<bool>* shutting_down,
-    const SequenceNumber preserve_deletes_seqnum, LogBuffer* log_buffer,
-    FSDirectory* db_directory, FSDirectory* output_directory,
-    FSDirectory* blob_output_directory, Statistics* stats,
-    InstrumentedMutex* db_mutex, ErrorHandler* db_error_handler,
+    LogBuffer* log_buffer, FSDirectory* db_directory,
+    FSDirectory* output_directory, FSDirectory* blob_output_directory,
+    Statistics* stats, InstrumentedMutex* db_mutex,
+    ErrorHandler* db_error_handler,
     std::vector<SequenceNumber> existing_snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
-    const SnapshotChecker* snapshot_checker, std::shared_ptr<Cache> table_cache,
-    EventLogger* event_logger, bool paranoid_file_checks, bool measure_io_stats,
-    const std::string& dbname, CompactionJobStats* compaction_job_stats,
-    Env::Priority thread_pri, const std::shared_ptr<IOTracer>& io_tracer,
-    const std::atomic<int>* manual_compaction_paused,
-    const std::atomic<bool>* manual_compaction_canceled,
+    const SnapshotChecker* snapshot_checker, JobContext* job_context,
+    std::shared_ptr<Cache> table_cache, EventLogger* event_logger,
+    bool paranoid_file_checks, bool measure_io_stats, const std::string& dbname,
+    CompactionJobStats* compaction_job_stats, Env::Priority thread_pri,
+    const std::shared_ptr<IOTracer>& io_tracer,
+    const std::atomic<bool>& manual_compaction_canceled,
     const std::string& db_id, const std::string& db_session_id,
-    std::string full_history_ts_low, BlobFileCompletionCallback* blob_callback)
+    std::string full_history_ts_low, std::string trim_ts,
+    BlobFileCompletionCallback* blob_callback)
     : compact_(new CompactionState(compaction)),
       compaction_stats_(compaction->compaction_reason(), 1),
       db_options_(db_options),
@@ -452,9 +455,7 @@ CompactionJob::CompactionJob(
           fs_->OptimizeForCompactionTableRead(file_options, db_options_)),
       versions_(versions),
       shutting_down_(shutting_down),
-      manual_compaction_paused_(manual_compaction_paused),
       manual_compaction_canceled_(manual_compaction_canceled),
-      preserve_deletes_seqnum_(preserve_deletes_seqnum),
       db_directory_(db_directory),
       blob_output_directory_(blob_output_directory),
       db_mutex_(db_mutex),
@@ -462,12 +463,14 @@ CompactionJob::CompactionJob(
       existing_snapshots_(std::move(existing_snapshots)),
       earliest_write_conflict_snapshot_(earliest_write_conflict_snapshot),
       snapshot_checker_(snapshot_checker),
+      job_context_(job_context),
       table_cache_(std::move(table_cache)),
       event_logger_(event_logger),
       paranoid_file_checks_(paranoid_file_checks),
       measure_io_stats_(measure_io_stats),
       thread_pri_(thread_pri),
       full_history_ts_low_(std::move(full_history_ts_low)),
+      trim_ts_(std::move(trim_ts)),
       blob_callback_(blob_callback) {
   assert(compaction_job_stats_ != nullptr);
   assert(log_buffer_ != nullptr);
@@ -1043,6 +1046,7 @@ CompactionJob::ProcessKeyValueCompactionWithCompactionService(
   const Compaction* compaction = sub_compact->compaction;
   CompactionServiceInput compaction_input;
   compaction_input.output_level = compaction->output_level();
+  compaction_input.db_id = db_id_;
 
   const std::vector<CompactionInputFiles>& inputs =
       *(compact_->compaction->inputs());
@@ -1204,6 +1208,7 @@ CompactionJob::ProcessKeyValueCompactionWithCompactionService(
     meta.oldest_ancester_time = file.oldest_ancester_time;
     meta.file_creation_time = file.file_creation_time;
     meta.marked_for_compaction = file.marked_for_compaction;
+    meta.unique_id = file.unique_id;
 
     auto cfd = compaction->column_family_data();
     sub_compact->outputs.emplace_back(std::move(meta),
@@ -1250,7 +1255,7 @@ void CompactionJob::NotifyOnSubcompactionBegin(
     return;
   }
   if (c->is_manual_compaction() &&
-      manual_compaction_paused_->load(std::memory_order_acquire) > 0) {
+      manual_compaction_canceled_.load(std::memory_order_acquire)) {
     return;
   }
 
@@ -1312,7 +1317,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
 #endif  // !ROCKSDB_LITE
 
-  uint64_t prev_cpu_micros = db_options_.clock->CPUNanos() / 1000;
+  uint64_t prev_cpu_micros = db_options_.clock->CPUMicros();
 
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
 
@@ -1338,13 +1343,15 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   CompactionRangeDelAggregator range_del_agg(&cfd->internal_comparator(),
                                              existing_snapshots_);
 
+  // TODO: since we already use C++17, should use
+  // std::optional<const Slice> instead.
   const Slice* const start = sub_compact->start;
   const Slice* const end = sub_compact->end;
 
   ReadOptions read_options;
   read_options.verify_checksums = true;
   read_options.fill_cache = false;
-  read_options.rate_limiter_priority = Env::IO_LOW;
+  read_options.rate_limiter_priority = GetRateLimiterPriority();
   // Compaction iterators shouldn't be confined to a single prefix.
   // Compactions use Seek() for
   // (a) concurrent compactions,
@@ -1359,9 +1366,13 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   // Although the v2 aggregator is what the level iterator(s) know about,
   // the AddTombstones calls will be propagated down to the v1 aggregator.
-  std::unique_ptr<InternalIterator> raw_input(
-      versions_->MakeInputIterator(read_options, sub_compact->compaction,
-                                   &range_del_agg, file_options_for_read_));
+  std::unique_ptr<InternalIterator> raw_input(versions_->MakeInputIterator(
+      read_options, sub_compact->compaction, &range_del_agg,
+      file_options_for_read_,
+      (start == nullptr) ? std::optional<const Slice>{}
+                         : std::optional<const Slice>{*start},
+      (end == nullptr) ? std::optional<const Slice>{}
+                       : std::optional<const Slice>{*end}));
   InternalIterator* input = raw_input.get();
 
   IterKey start_ikey;
@@ -1380,19 +1391,26 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 
   std::unique_ptr<InternalIterator> clip;
   if (start || end) {
-    clip.reset(new ClippingIterator(
+    clip = std::make_unique<ClippingIterator>(
         raw_input.get(), start ? &start_slice : nullptr,
-        end ? &end_slice : nullptr, &cfd->internal_comparator()));
+        end ? &end_slice : nullptr, &cfd->internal_comparator());
     input = clip.get();
   }
 
   std::unique_ptr<InternalIterator> blob_counter;
 
   if (sub_compact->compaction->DoesInputReferenceBlobFiles()) {
-    sub_compact->blob_garbage_meter.reset(new BlobGarbageMeter);
-    blob_counter.reset(
-        new BlobCountingIterator(input, sub_compact->blob_garbage_meter.get()));
+    sub_compact->blob_garbage_meter = std::make_unique<BlobGarbageMeter>();
+    blob_counter = std::make_unique<BlobCountingIterator>(
+        input, sub_compact->blob_garbage_meter.get());
     input = blob_counter.get();
+  }
+
+  std::unique_ptr<InternalIterator> trim_history_iter;
+  if (cfd->user_comparator()->timestamp_size() > 0 && !trim_ts_.empty()) {
+    trim_history_iter = std::make_unique<HistoryTrimmingIterator>(
+        input, cfd->user_comparator(), trim_ts_);
+    input = trim_history_iter.get();
   }
 
   input->SeekToFirst();
@@ -1434,7 +1452,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   std::vector<std::string> blob_file_paths;
 
   std::unique_ptr<BlobFileBuilder> blob_file_builder(
-      mutable_cf_options->enable_blob_files
+      (mutable_cf_options->enable_blob_files &&
+       sub_compact->compaction->output_level() >=
+           mutable_cf_options->blob_file_starting_level)
           ? new BlobFileBuilder(
                 versions_, fs_.get(),
                 sub_compact->compaction->immutable_options(),
@@ -1448,20 +1468,23 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   TEST_SYNC_POINT_CALLBACK(
       "CompactionJob::Run():PausingManualCompaction:1",
       reinterpret_cast<void*>(
-          const_cast<std::atomic<int>*>(manual_compaction_paused_)));
+          const_cast<std::atomic<bool>*>(&manual_compaction_canceled_)));
 
   Status status;
   const std::string* const full_history_ts_low =
       full_history_ts_low_.empty() ? nullptr : &full_history_ts_low_;
+  const SequenceNumber job_snapshot_seq =
+      job_context_ ? job_context_->GetJobSnapshotSequence()
+                   : kMaxSequenceNumber;
   sub_compact->c_iter.reset(new CompactionIterator(
       input, cfd->user_comparator(), &merge, versions_->LastSequence(),
-      &existing_snapshots_, earliest_write_conflict_snapshot_,
+      &existing_snapshots_, earliest_write_conflict_snapshot_, job_snapshot_seq,
       snapshot_checker_, env_, ShouldReportDetailedTime(env_, stats_),
       /*expect_valid_internal_key=*/true, &range_del_agg,
       blob_file_builder.get(), db_options_.allow_data_in_errors,
+      db_options_.enforce_single_del_contracts, manual_compaction_canceled_,
       sub_compact->compaction, compaction_filter, shutting_down_,
-      preserve_deletes_seqnum_, manual_compaction_paused_,
-      manual_compaction_canceled_, db_options_.info_log, full_history_ts_low));
+      db_options_.info_log, full_history_ts_low));
   auto c_iter = sub_compact->c_iter.get();
   c_iter->SeekToFirst();
   if (c_iter->Valid() && sub_compact->compaction->output_level() != 0) {
@@ -1513,11 +1536,15 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       break;
     }
 
+    const ParsedInternalKey& ikey = c_iter->ikey();
+    status = sub_compact->current_output()->meta.UpdateBoundaries(
+        key, value, ikey.sequence, ikey.type);
+    if (!status.ok()) {
+      break;
+    }
+
     sub_compact->current_output_file_size =
         sub_compact->builder->EstimatedFileSize();
-    const ParsedInternalKey& ikey = c_iter->ikey();
-    sub_compact->current_output()->meta.UpdateBoundaries(
-        key, value, ikey.sequence, ikey.type);
     sub_compact->num_output_records++;
 
     // Close output file if it is big enough. Two possibilities determine it's
@@ -1539,7 +1566,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     TEST_SYNC_POINT_CALLBACK(
         "CompactionJob::Run():PausingManualCompaction:2",
         reinterpret_cast<void*>(
-            const_cast<std::atomic<int>*>(manual_compaction_paused_)));
+            const_cast<std::atomic<bool>*>(&manual_compaction_canceled_)));
     if (partitioner.get()) {
       last_key_for_partitioner.assign(c_iter->user_key().data_,
                                       c_iter->user_key().size_);
@@ -1618,10 +1645,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     status = Status::ShutdownInProgress("Database shutdown");
   }
   if ((status.ok() || status.IsColumnFamilyDropped()) &&
-      ((manual_compaction_paused_ &&
-        manual_compaction_paused_->load(std::memory_order_relaxed) > 0) ||
-       (manual_compaction_canceled_ &&
-        manual_compaction_canceled_->load(std::memory_order_relaxed)))) {
+      (manual_compaction_canceled_.load(std::memory_order_relaxed))) {
     status = Status::Incomplete(Status::SubCode::kManualCompactionPaused);
   }
   if (status.ok()) {
@@ -1659,7 +1683,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   }
 
   sub_compact->compaction_job_stats.cpu_micros =
-      db_options_.clock->CPUNanos() / 1000 - prev_cpu_micros;
+      db_options_.clock->CPUMicros() - prev_cpu_micros;
 
   if (measure_io_stats_) {
     sub_compact->compaction_job_stats.file_write_nanos +=
@@ -1950,7 +1974,8 @@ Status CompactionJob::FinishCompactionOutputFile(
         refined_oldest_ancester_time =
             sub_compact->compaction->MinInputFileOldestAncesterTime(
                 &(meta->smallest), &(meta->largest));
-        if (refined_oldest_ancester_time != port::kMaxUint64) {
+        if (refined_oldest_ancester_time !=
+            std::numeric_limits<uint64_t>::max()) {
           meta->oldest_ancester_time = refined_oldest_ancester_time;
         }
       }
@@ -2087,11 +2112,11 @@ Status CompactionJob::InstallCompactionResults(
 
   {
     Compaction::InputLevelSummaryBuffer inputs_summary;
-    ROCKS_LOG_INFO(db_options_.info_log,
-                   "[%s] [JOB %d] Compacted %s => %" PRIu64 " bytes",
-                   compaction->column_family_data()->GetName().c_str(), job_id_,
-                   compaction->InputLevelSummary(&inputs_summary),
-                   compact_->total_bytes + compact_->total_blob_bytes);
+    ROCKS_LOG_BUFFER(log_buffer_,
+                     "[%s] [JOB %d] Compacted %s => %" PRIu64 " bytes",
+                     compaction->column_family_data()->GetName().c_str(),
+                     job_id_, compaction->InputLevelSummary(&inputs_summary),
+                     compact_->total_bytes + compact_->total_blob_bytes);
   }
 
   VersionEdit* const edit = compaction->edit();
@@ -2240,7 +2265,7 @@ Status CompactionJob::OpenCompactionOutputFile(
       sub_compact->compaction->MinInputFileOldestAncesterTime(
           (sub_compact->start != nullptr) ? &tmp_start : nullptr,
           (sub_compact->end != nullptr) ? &tmp_end : nullptr);
-  if (oldest_ancester_time == port::kMaxUint64) {
+  if (oldest_ancester_time == std::numeric_limits<uint64_t>::max()) {
     oldest_ancester_time = current_time;
   }
 
@@ -2252,6 +2277,18 @@ Status CompactionJob::OpenCompactionOutputFile(
     meta.oldest_ancester_time = oldest_ancester_time;
     meta.file_creation_time = current_time;
     meta.temperature = temperature;
+    assert(!db_id_.empty());
+    assert(!db_session_id_.empty());
+    s = GetSstInternalUniqueId(db_id_, db_session_id_, meta.fd.GetNumber(),
+                               &meta.unique_id);
+    if (!s.ok()) {
+      ROCKS_LOG_ERROR(db_options_.info_log,
+                      "[%s] [JOB %d] file #%" PRIu64
+                      " failed to generate unique id: %s.",
+                      cfd->GetName().c_str(), job_id_, meta.fd.GetNumber(),
+                      s.ToString().c_str());
+      return s;
+    }
     sub_compact->outputs.emplace_back(
         std::move(meta), cfd->internal_comparator(),
         /*enable_order_check=*/
@@ -2260,7 +2297,7 @@ Status CompactionJob::OpenCompactionOutputFile(
         /*enable_hash=*/paranoid_file_checks_);
   }
 
-  writable_file->SetIOPriority(Env::IOPriority::IO_LOW);
+  writable_file->SetIOPriority(GetRateLimiterPriority());
   writable_file->SetWriteLifeTimeHint(write_hint_);
   FileTypeSet tmp_set = db_options_.checksum_handoff_file_types;
   writable_file->SetPreallocationBlockSize(static_cast<size_t>(
@@ -2434,7 +2471,7 @@ void CompactionJob::LogCompaction() {
            << "compaction_reason"
            << GetCompactionReasonString(compaction->compaction_reason());
     for (size_t i = 0; i < compaction->num_input_levels(); ++i) {
-      stream << ("files_L" + ToString(compaction->level(i)));
+      stream << ("files_L" + std::to_string(compaction->level(i)));
       stream.StartArray();
       for (auto f : *compaction->inputs(i)) {
         stream << f->fd.GetNumber();
@@ -2449,6 +2486,19 @@ void CompactionJob::LogCompaction() {
 std::string CompactionJob::GetTableFileName(uint64_t file_number) {
   return TableFileName(compact_->compaction->immutable_options()->cf_paths,
                        file_number, compact_->compaction->output_path_id());
+}
+
+Env::IOPriority CompactionJob::GetRateLimiterPriority() {
+  if (versions_ && versions_->GetColumnFamilySet() &&
+      versions_->GetColumnFamilySet()->write_controller()) {
+    WriteController* write_controller =
+        versions_->GetColumnFamilySet()->write_controller();
+    if (write_controller->NeedsDelay() || write_controller->IsStopped()) {
+      return Env::IO_USER;
+    }
+  }
+
+  return Env::IO_LOW;
 }
 
 #ifndef ROCKSDB_LITE
@@ -2472,19 +2522,20 @@ CompactionServiceCompactionJob::CompactionServiceCompactionJob(
     std::vector<SequenceNumber> existing_snapshots,
     std::shared_ptr<Cache> table_cache, EventLogger* event_logger,
     const std::string& dbname, const std::shared_ptr<IOTracer>& io_tracer,
+    const std::atomic<bool>& manual_compaction_canceled,
     const std::string& db_id, const std::string& db_session_id,
     const std::string& output_path,
     const CompactionServiceInput& compaction_service_input,
     CompactionServiceResult* compaction_service_result)
     : CompactionJob(
           job_id, compaction, db_options, mutable_db_options, file_options,
-          versions, shutting_down, 0, log_buffer, nullptr, output_directory,
+          versions, shutting_down, log_buffer, nullptr, output_directory,
           nullptr, stats, db_mutex, db_error_handler, existing_snapshots,
-          kMaxSequenceNumber, nullptr, table_cache, event_logger,
+          kMaxSequenceNumber, nullptr, nullptr, table_cache, event_logger,
           compaction->mutable_cf_options()->paranoid_file_checks,
           compaction->mutable_cf_options()->report_bg_io_stats, dbname,
           &(compaction_service_result->stats), Env::Priority::USER, io_tracer,
-          nullptr, nullptr, db_id, db_session_id,
+          manual_compaction_canceled, db_id, db_session_id,
           compaction->column_family_data()->GetFullHistoryTsLow()),
       output_path_(output_path),
       compaction_input_(compaction_service_input),
@@ -2570,7 +2621,7 @@ Status CompactionServiceCompactionJob::Run() {
         meta.fd.largest_seqno, meta.smallest.Encode().ToString(),
         meta.largest.Encode().ToString(), meta.oldest_ancester_time,
         meta.file_creation_time, output_file.validator.GetHash(),
-        meta.marked_for_compaction);
+        meta.marked_for_compaction, meta.unique_id);
   }
   compaction_result_->num_output_records = sub_compact->num_output_records;
   compaction_result_->total_bytes = sub_compact->total_bytes;
@@ -2674,6 +2725,9 @@ static std::unordered_map<std::string, OptionTypeInfo> cs_input_type_info = {
     {"output_level",
      {offsetof(struct CompactionServiceInput, output_level), OptionType::kInt,
       OptionVerificationType::kNormal, OptionTypeFlags::kNone}},
+    {"db_id",
+     {offsetof(struct CompactionServiceInput, db_id),
+      OptionType::kEncodedString}},
     {"has_begin",
      {offsetof(struct CompactionServiceInput, has_begin), OptionType::kBoolean,
       OptionVerificationType::kNormal, OptionTypeFlags::kNone}},
@@ -2731,6 +2785,11 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct CompactionServiceOutputFile, marked_for_compaction),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
+        {"unique_id",
+         OptionTypeInfo::Array<uint64_t, 2>(
+             offsetof(struct CompactionServiceOutputFile, unique_id),
+             OptionVerificationType::kNormal, OptionTypeFlags::kNone,
+             {0, OptionType::kUInt64T})},
 };
 
 static std::unordered_map<std::string, OptionTypeInfo>
@@ -2926,6 +2985,7 @@ static std::unordered_map<std::string, OptionTypeInfo> cs_result_type_info = {
          const void* addr1, const void* addr2, std::string* mismatch) {
         const auto status1 = static_cast<const Status*>(addr1);
         const auto status2 = static_cast<const Status*>(addr2);
+
         StatusSerializationAdapter adatper1(*status1);
         StatusSerializationAdapter adapter2(*status2);
         return OptionTypeInfo::TypesAreEqual(opts, status_adapter_type_info,
@@ -2983,7 +3043,7 @@ Status CompactionServiceInput::Read(const std::string& data_str,
   } else {
     return Status::NotSupported(
         "Compaction Service Input data version not supported: " +
-        ToString(format_version));
+        std::to_string(format_version));
   }
 }
 
@@ -3012,7 +3072,7 @@ Status CompactionServiceResult::Read(const std::string& data_str,
   } else {
     return Status::NotSupported(
         "Compaction Service Result data version not supported: " +
-        ToString(format_version));
+        std::to_string(format_version));
   }
 }
 

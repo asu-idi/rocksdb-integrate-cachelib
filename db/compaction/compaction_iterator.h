@@ -92,8 +92,6 @@ class CompactionIterator {
 
     virtual bool allow_ingest_behind() const = 0;
 
-    virtual bool preserve_deletes() const = 0;
-
     virtual bool allow_mmap_reads() const = 0;
 
     virtual bool enable_blob_garbage_collection() const = 0;
@@ -139,19 +137,16 @@ class CompactionIterator {
       return compaction_->immutable_options()->allow_ingest_behind;
     }
 
-    bool preserve_deletes() const override { return false; }
-
     bool allow_mmap_reads() const override {
       return compaction_->immutable_options()->allow_mmap_reads;
     }
 
     bool enable_blob_garbage_collection() const override {
-      return compaction_->mutable_cf_options()->enable_blob_garbage_collection;
+      return compaction_->enable_blob_garbage_collection();
     }
 
     double blob_garbage_collection_age_cutoff() const override {
-      return compaction_->mutable_cf_options()
-          ->blob_garbage_collection_age_cutoff;
+      return compaction_->blob_garbage_collection_age_cutoff();
     }
 
     uint64_t blob_compaction_readahead_size() const override {
@@ -172,40 +167,42 @@ class CompactionIterator {
     const Compaction* compaction_;
   };
 
-  CompactionIterator(
-      InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
-      SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
-      SequenceNumber earliest_write_conflict_snapshot,
-      const SnapshotChecker* snapshot_checker, Env* env,
-      bool report_detailed_time, bool expect_valid_internal_key,
-      CompactionRangeDelAggregator* range_del_agg,
-      BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-      const Compaction* compaction = nullptr,
-      const CompactionFilter* compaction_filter = nullptr,
-      const std::atomic<bool>* shutting_down = nullptr,
-      const SequenceNumber preserve_deletes_seqnum = 0,
-      const std::atomic<int>* manual_compaction_paused = nullptr,
-      const std::atomic<bool>* manual_compaction_canceled = nullptr,
-      const std::shared_ptr<Logger> info_log = nullptr,
-      const std::string* full_history_ts_low = nullptr);
+  CompactionIterator(InternalIterator* input, const Comparator* cmp,
+                     MergeHelper* merge_helper, SequenceNumber last_sequence,
+                     std::vector<SequenceNumber>* snapshots,
+                     SequenceNumber earliest_write_conflict_snapshot,
+                     SequenceNumber job_snapshot,
+                     const SnapshotChecker* snapshot_checker, Env* env,
+                     bool report_detailed_time, bool expect_valid_internal_key,
+                     CompactionRangeDelAggregator* range_del_agg,
+                     BlobFileBuilder* blob_file_builder,
+                     bool allow_data_in_errors,
+                     bool enforce_single_del_contracts,
+                     const std::atomic<bool>& manual_compaction_canceled,
+                     const Compaction* compaction = nullptr,
+                     const CompactionFilter* compaction_filter = nullptr,
+                     const std::atomic<bool>* shutting_down = nullptr,
+                     const std::shared_ptr<Logger> info_log = nullptr,
+                     const std::string* full_history_ts_low = nullptr);
 
   // Constructor with custom CompactionProxy, used for tests.
-  CompactionIterator(
-      InternalIterator* input, const Comparator* cmp, MergeHelper* merge_helper,
-      SequenceNumber last_sequence, std::vector<SequenceNumber>* snapshots,
-      SequenceNumber earliest_write_conflict_snapshot,
-      const SnapshotChecker* snapshot_checker, Env* env,
-      bool report_detailed_time, bool expect_valid_internal_key,
-      CompactionRangeDelAggregator* range_del_agg,
-      BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-      std::unique_ptr<CompactionProxy> compaction,
-      const CompactionFilter* compaction_filter = nullptr,
-      const std::atomic<bool>* shutting_down = nullptr,
-      const SequenceNumber preserve_deletes_seqnum = 0,
-      const std::atomic<int>* manual_compaction_paused = nullptr,
-      const std::atomic<bool>* manual_compaction_canceled = nullptr,
-      const std::shared_ptr<Logger> info_log = nullptr,
-      const std::string* full_history_ts_low = nullptr);
+  CompactionIterator(InternalIterator* input, const Comparator* cmp,
+                     MergeHelper* merge_helper, SequenceNumber last_sequence,
+                     std::vector<SequenceNumber>* snapshots,
+                     SequenceNumber earliest_write_conflict_snapshot,
+                     SequenceNumber job_snapshot,
+                     const SnapshotChecker* snapshot_checker, Env* env,
+                     bool report_detailed_time, bool expect_valid_internal_key,
+                     CompactionRangeDelAggregator* range_del_agg,
+                     BlobFileBuilder* blob_file_builder,
+                     bool allow_data_in_errors,
+                     bool enforce_single_del_contracts,
+                     const std::atomic<bool>& manual_compaction_canceled,
+                     std::unique_ptr<CompactionProxy> compaction,
+                     const CompactionFilter* compaction_filter = nullptr,
+                     const std::atomic<bool>* shutting_down = nullptr,
+                     const std::shared_ptr<Logger> info_log = nullptr,
+                     const std::string* full_history_ts_low = nullptr);
 
   ~CompactionIterator();
 
@@ -272,14 +269,9 @@ class CompactionIterator {
   inline SequenceNumber findEarliestVisibleSnapshot(
       SequenceNumber in, SequenceNumber* prev_snapshot);
 
-  // Checks whether the currently seen ikey_ is needed for
-  // incremental (differential) snapshot and hence can't be dropped
-  // or seqnum be zero-ed out even if all other conditions for it are met.
-  inline bool ikeyNotNeededForIncrementalSnapshot();
-
   inline bool KeyCommitted(SequenceNumber sequence) {
     return snapshot_checker_ == nullptr ||
-           snapshot_checker_->CheckInSnapshot(sequence, kMaxSequenceNumber) ==
+           snapshot_checker_->CheckInSnapshot(sequence, job_snapshot_) ==
                SnapshotCheckerResult::kInSnapshot;
   }
 
@@ -320,6 +312,7 @@ class CompactionIterator {
   std::unordered_set<SequenceNumber> released_snapshots_;
   std::vector<SequenceNumber>::const_iterator earliest_snapshot_iter_;
   const SequenceNumber earliest_write_conflict_snapshot_;
+  const SequenceNumber job_snapshot_;
   const SnapshotChecker* const snapshot_checker_;
   Env* env_;
   SystemClock* clock_;
@@ -330,9 +323,7 @@ class CompactionIterator {
   std::unique_ptr<CompactionProxy> compaction_;
   const CompactionFilter* compaction_filter_;
   const std::atomic<bool>* shutting_down_;
-  const std::atomic<int>* manual_compaction_paused_;
-  const std::atomic<bool>* manual_compaction_canceled_;
-  const SequenceNumber preserve_deletes_seqnum_;
+  const std::atomic<bool>& manual_compaction_canceled_;
   bool bottommost_level_;
   bool valid_ = false;
   bool visible_at_tip_;
@@ -342,6 +333,8 @@ class CompactionIterator {
   std::shared_ptr<Logger> info_log_;
 
   bool allow_data_in_errors_;
+
+  const bool enforce_single_del_contracts_;
 
   // Comes from comparator.
   const size_t timestamp_size_;
@@ -435,10 +428,7 @@ class CompactionIterator {
 
   bool IsPausingManualCompaction() {
     // This is a best-effort facility, so memory_order_relaxed is sufficient.
-    return (manual_compaction_paused_ &&
-            manual_compaction_paused_->load(std::memory_order_relaxed) > 0) ||
-           (manual_compaction_canceled_ &&
-            manual_compaction_canceled_->load(std::memory_order_relaxed));
+    return manual_compaction_canceled_.load(std::memory_order_relaxed);
   }
 };
 

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "db/blob/blob_file_cache.h"
+#include "db/blob/blob_source.h"
 #include "db/compaction/compaction_picker.h"
 #include "db/compaction/compaction_picker_fifo.h"
 #include "db/compaction/compaction_picker_level.h"
@@ -136,9 +137,15 @@ Status CheckCompressionSupported(const ColumnFamilyOptions& cf_options) {
     }
   }
   if (cf_options.compression_opts.zstd_max_train_bytes > 0) {
-    if (!ZSTD_TrainDictionarySupported()) {
+    if (cf_options.compression_opts.use_zstd_dict_trainer) {
+      if (!ZSTD_TrainDictionarySupported()) {
+        return Status::InvalidArgument(
+            "zstd dictionary trainer cannot be used because ZSTD 1.1.3+ "
+            "is not linked with the binary.");
+      }
+    } else if (!ZSTD_FinalizeDictionarySupported()) {
       return Status::InvalidArgument(
-          "zstd dictionary trainer cannot be used because ZSTD 1.1.3+ "
+          "zstd finalizeDictionary cannot be used because ZSTD 1.4.5+ "
           "is not linked with the binary.");
     }
     if (cf_options.compression_opts.max_dict_bytes == 0) {
@@ -501,7 +508,8 @@ std::vector<std::string> ColumnFamilyData::GetDbPaths() const {
   return paths;
 }
 
-const uint32_t ColumnFamilyData::kDummyColumnFamilyDataId = port::kMaxUint32;
+const uint32_t ColumnFamilyData::kDummyColumnFamilyDataId =
+    std::numeric_limits<uint32_t>::max();
 
 ColumnFamilyData::ColumnFamilyData(
     uint32_t id, const std::string& name, Version* _dummy_versions,
@@ -509,7 +517,7 @@ ColumnFamilyData::ColumnFamilyData(
     const ColumnFamilyOptions& cf_options, const ImmutableDBOptions& db_options,
     const FileOptions* file_options, ColumnFamilySet* column_family_set,
     BlockCacheTracer* const block_cache_tracer,
-    const std::shared_ptr<IOTracer>& io_tracer,
+    const std::shared_ptr<IOTracer>& io_tracer, const std::string& db_id,
     const std::string& db_session_id)
     : id_(id),
       name_(name),
@@ -573,6 +581,8 @@ ColumnFamilyData::ColumnFamilyData(
     blob_file_cache_.reset(
         new BlobFileCache(_table_cache, ioptions(), soptions(), id_,
                           internal_stats_->GetBlobFileReadHist(), io_tracer));
+    blob_source_.reset(new BlobSource(ioptions(), db_id, db_session_id,
+                                      blob_file_cache_.get()));
 
     if (ioptions_.compaction_style == kCompactionStyleLevel) {
       compaction_picker_.reset(
@@ -612,6 +622,26 @@ ColumnFamilyData::ColumnFamilyData(
   }
 
   RecalculateWriteStallConditions(mutable_cf_options_);
+
+  if (cf_options.table_factory->IsInstanceOf(
+          TableFactory::kBlockBasedTableName()) &&
+      cf_options.table_factory->GetOptions<BlockBasedTableOptions>()) {
+    const BlockBasedTableOptions* bbto =
+        cf_options.table_factory->GetOptions<BlockBasedTableOptions>();
+    const auto& options_overrides = bbto->cache_usage_options.options_overrides;
+    const auto file_metadata_charged =
+        options_overrides.at(CacheEntryRole::kFileMetadata).charged;
+    if (bbto->block_cache &&
+        file_metadata_charged == CacheEntryRoleOptions::Decision::kEnabled) {
+      // TODO(hx235): Add a `ConcurrentCacheReservationManager` at DB scope
+      // responsible for reservation of `ObsoleteFileInfo` so that we can keep
+      // this `file_metadata_cache_res_mgr_` nonconcurrent
+      file_metadata_cache_res_mgr_.reset(new ConcurrentCacheReservationManager(
+          std::make_shared<
+              CacheReservationManagerImpl<CacheEntryRole::kFileMetadata>>(
+              bbto->block_cache)));
+    }
+  }
 }
 
 // DB mutex held
@@ -666,6 +696,19 @@ ColumnFamilyData::~ColumnFamilyData() {
           ioptions_.logger,
           "Failed to unregister data paths of column family (id: %d, name: %s)",
           id_, name_.c_str());
+    }
+  }
+
+  if (data_dirs_.size()) {  // Explicitly close data directories
+    Status s = Status::OK();
+    for (auto& data_dir_ptr : data_dirs_) {
+      if (data_dir_ptr) {
+        s = data_dir_ptr->Close(IOOptions(), nullptr);
+        if (!s.ok()) {
+          // TODO(zichen): add `Status Close()` and `CloseDirectories()
+          s.PermitUncheckedError();
+        }
+      }
     }
   }
 }
@@ -826,8 +869,8 @@ int GetL0ThresholdSpeedupCompaction(int level0_file_num_compaction_trigger,
   // condition.
   // Or twice as compaction trigger, if it is smaller.
   int64_t res = std::min(twice_level0_trigger, one_fourth_trigger_slowdown);
-  if (res >= port::kMaxInt32) {
-    return port::kMaxInt32;
+  if (res >= std::numeric_limits<int32_t>::max()) {
+    return std::numeric_limits<int32_t>::max();
   } else {
     // res fits in int
     return static_cast<int>(res);
@@ -1164,12 +1207,12 @@ Compaction* ColumnFamilyData::CompactRange(
     int output_level, const CompactRangeOptions& compact_range_options,
     const InternalKey* begin, const InternalKey* end,
     InternalKey** compaction_end, bool* conflict,
-    uint64_t max_file_num_to_ignore) {
+    uint64_t max_file_num_to_ignore, const std::string& trim_ts) {
   auto* result = compaction_picker_->CompactRange(
       GetName(), mutable_cf_options, mutable_db_options,
       current_->storage_info(), input_level, output_level,
       compact_range_options, begin, end, compaction_end, conflict,
-      max_file_num_to_ignore);
+      max_file_num_to_ignore, trim_ts);
   if (result != nullptr) {
     result->SetInputVersion(current_);
   }
@@ -1464,13 +1507,14 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
                                  WriteController* _write_controller,
                                  BlockCacheTracer* const block_cache_tracer,
                                  const std::shared_ptr<IOTracer>& io_tracer,
+                                 const std::string& db_id,
                                  const std::string& db_session_id)
     : max_column_family_(0),
       file_options_(file_options),
       dummy_cfd_(new ColumnFamilyData(
           ColumnFamilyData::kDummyColumnFamilyDataId, "", nullptr, nullptr,
           nullptr, ColumnFamilyOptions(), *db_options, &file_options_, nullptr,
-          block_cache_tracer, io_tracer, db_session_id)),
+          block_cache_tracer, io_tracer, db_id, db_session_id)),
       default_cfd_cache_(nullptr),
       db_name_(dbname),
       db_options_(db_options),
@@ -1479,6 +1523,7 @@ ColumnFamilySet::ColumnFamilySet(const std::string& dbname,
       write_controller_(_write_controller),
       block_cache_tracer_(block_cache_tracer),
       io_tracer_(io_tracer),
+      db_id_(db_id),
       db_session_id_(db_session_id) {
   // initialize linked list
   dummy_cfd_->prev_ = dummy_cfd_;
@@ -1546,7 +1591,7 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
   ColumnFamilyData* new_cfd = new ColumnFamilyData(
       id, name, dummy_versions, table_cache_, write_buffer_manager_, options,
       *db_options_, &file_options_, this, block_cache_tracer_, io_tracer_,
-      db_session_id_);
+      db_id_, db_session_id_);
   column_families_.insert({name, id});
   column_family_data_.insert({id, new_cfd});
   max_column_family_ = std::max(max_column_family_, id);
@@ -1560,20 +1605,6 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     default_cfd_cache_ = new_cfd;
   }
   return new_cfd;
-}
-
-// REQUIRES: DB mutex held
-void ColumnFamilySet::FreeDeadColumnFamilies() {
-  autovector<ColumnFamilyData*> to_delete;
-  for (auto cfd = dummy_cfd_->next_; cfd != dummy_cfd_; cfd = cfd->next_) {
-    if (cfd->refs_.load(std::memory_order_relaxed) == 0) {
-      to_delete.push_back(cfd);
-    }
-  }
-  for (auto cfd : to_delete) {
-    // this is very rare, so it's not a problem that we do it under a mutex
-    delete cfd;
-  }
 }
 
 // under a DB mutex AND from a write thread

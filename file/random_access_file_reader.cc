@@ -270,9 +270,6 @@ bool TryMerge(FSReadRequest* dest, const FSReadRequest& src) {
 IOStatus RandomAccessFileReader::MultiRead(
     const IOOptions& opts, FSReadRequest* read_reqs, size_t num_reqs,
     AlignedBuf* aligned_buf, Env::IOPriority rate_limiter_priority) const {
-  if (rate_limiter_priority != Env::IO_TOTAL) {
-    return IOStatus::NotSupported("Unable to rate limit MultiRead()");
-  }
   (void)aligned_buf;  // suppress warning of unused variable in LITE mode
   assert(num_reqs > 0);
 
@@ -283,7 +280,7 @@ IOStatus RandomAccessFileReader::MultiRead(
 #endif  // !NDEBUG
 
   // To be paranoid modify scratch a little bit, so in case underlying
-  // FileSystem doesn't fill the buffer but return succee and `scratch` returns
+  // FileSystem doesn't fill the buffer but return success and `scratch` returns
   // contains a previous block, returned value will not pass checksum.
   // This byte might not change anything for direct I/O case, but it's OK.
   for (size_t i = 0; i < num_reqs; i++) {
@@ -359,6 +356,30 @@ IOStatus RandomAccessFileReader::MultiRead(
 
     {
       IOSTATS_CPU_TIMER_GUARD(cpu_read_nanos, clock_);
+      if (rate_limiter_priority != Env::IO_TOTAL && rate_limiter_ != nullptr) {
+        // TODO: ideally we should call `RateLimiter::RequestToken()` for
+        // allowed bytes to multi-read and then consume those bytes by
+        // satisfying as many requests in `MultiRead()` as possible, instead of
+        // what we do here, which can cause burst when the
+        // `total_multi_read_size` is big.
+        size_t total_multi_read_size = 0;
+        assert(fs_reqs != nullptr);
+        for (size_t i = 0; i < num_fs_reqs; ++i) {
+          FSReadRequest& req = fs_reqs[i];
+          total_multi_read_size += req.len;
+        }
+        size_t remaining_bytes = total_multi_read_size;
+        size_t request_bytes = 0;
+        while (remaining_bytes > 0) {
+          request_bytes = std::min(
+              static_cast<size_t>(rate_limiter_->GetSingleBurstBytes()),
+              remaining_bytes);
+          rate_limiter_->Request(request_bytes, rate_limiter_priority,
+                                 nullptr /* stats */,
+                                 RateLimiter::OpType::kRead);
+          remaining_bytes -= request_bytes;
+        }
+      }
       io_s = file_->MultiRead(fs_reqs, num_fs_reqs, opts, nullptr);
     }
 
@@ -423,5 +444,84 @@ IOStatus RandomAccessFileReader::PrepareIOOptions(const ReadOptions& ro,
   } else {
     return PrepareIOFromReadOptions(ro, SystemClock::Default().get(), opts);
   }
+}
+
+// TODO akanksha:
+// 1. Handle use_direct_io case which currently calls Read API.
+IOStatus RandomAccessFileReader::ReadAsync(
+    FSReadRequest& req, const IOOptions& opts,
+    std::function<void(const FSReadRequest&, void*)> cb, void* cb_arg,
+    void** io_handle, IOHandleDeleter* del_fn,
+    Env::IOPriority rate_limiter_priority) {
+  if (use_direct_io()) {
+    // For direct_io, it calls Read API.
+    req.status = Read(opts, req.offset, req.len, &(req.result), req.scratch,
+                      nullptr /*dbg*/, rate_limiter_priority);
+    cb(req, cb_arg);
+    return IOStatus::OK();
+  }
+
+  // Create a callback and populate info.
+  auto read_async_callback =
+      std::bind(&RandomAccessFileReader::ReadAsyncCallback, this,
+                std::placeholders::_1, std::placeholders::_2);
+  ReadAsyncInfo* read_async_info = new ReadAsyncInfo;
+  read_async_info->cb_ = cb;
+  read_async_info->cb_arg_ = cb_arg;
+  read_async_info->start_time_ = clock_->NowMicros();
+
+#ifndef ROCKSDB_LITE
+  if (ShouldNotifyListeners()) {
+    read_async_info->fs_start_ts_ = FileOperationInfo::StartNow();
+  }
+#endif
+
+  IOStatus s = file_->ReadAsync(req, opts, read_async_callback, read_async_info,
+                                io_handle, del_fn, nullptr /*dbg*/);
+// Suppress false positive clang analyzer warnings.
+// Memory is not released if file_->ReadAsync returns !s.ok(), because
+// ReadAsyncCallback is never called in that case. If ReadAsyncCallback is
+// called then ReadAsync should always return IOStatus::OK().
+#ifndef __clang_analyzer__
+  if (!s.ok()) {
+    delete read_async_info;
+  }
+#endif  // __clang_analyzer__
+
+  return s;
+}
+
+void RandomAccessFileReader::ReadAsyncCallback(const FSReadRequest& req,
+                                               void* cb_arg) {
+  ReadAsyncInfo* read_async_info = static_cast<ReadAsyncInfo*>(cb_arg);
+  assert(read_async_info);
+  assert(read_async_info->cb_);
+
+  read_async_info->cb_(req, read_async_info->cb_arg_);
+
+  // Update stats and notify listeners.
+  if (stats_ != nullptr && file_read_hist_ != nullptr) {
+    // elapsed doesn't take into account delay and overwrite as StopWatch does
+    // in Read.
+    uint64_t elapsed = clock_->NowMicros() - read_async_info->start_time_;
+    file_read_hist_->Add(elapsed);
+  }
+  if (req.status.ok()) {
+    RecordInHistogram(stats_, ASYNC_READ_BYTES, req.result.size());
+  }
+#ifndef ROCKSDB_LITE
+  if (ShouldNotifyListeners()) {
+    auto finish_ts = FileOperationInfo::FinishNow();
+    NotifyOnFileReadFinish(req.offset, req.result.size(),
+                           read_async_info->fs_start_ts_, finish_ts,
+                           req.status);
+  }
+  if (!req.status.ok()) {
+    NotifyOnIOError(req.status, FileOperationType::kRead, file_name(),
+                    req.result.size(), req.offset);
+  }
+#endif
+  RecordIOStats(stats_, file_temperature_, is_last_level_, req.result.size());
+  delete read_async_info;
 }
 }  // namespace ROCKSDB_NAMESPACE

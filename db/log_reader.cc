@@ -10,6 +10,7 @@
 #include "db/log_reader.h"
 
 #include <stdio.h>
+
 #include "file/sequence_file_reader.h"
 #include "port/lang.h"
 #include "rocksdb/env.h"
@@ -41,10 +42,14 @@ Reader::Reader(std::shared_ptr<Logger> info_log,
       recycled_(false),
       first_record_read_(false),
       compression_type_(kNoCompression),
-      compression_type_record_read_(false) {}
+      compression_type_record_read_(false),
+      uncompress_(nullptr) {}
 
 Reader::~Reader() {
   delete[] backing_store_;
+  if (uncompress_) {
+    delete uncompress_;
+  }
 }
 
 // For kAbsoluteConsistency, on clean shutdown we don't expect any error
@@ -58,6 +63,9 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
                         WALRecoveryMode wal_recovery_mode) {
   scratch->clear();
   record->clear();
+  if (uncompress_) {
+    uncompress_->Reset();
+  }
   bool in_fragmented_record = false;
   // Record offset of the logical record that we're reading
   // 0 is a dummy value to make compilers happy
@@ -235,8 +243,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch,
           ReportCorruption(fragment.size(),
                            "could not decode SetCompressionType record");
         } else {
-          compression_type_ = compression_record.GetCompressionType();
-          compression_type_record_read_ = true;
+          InitCompression(compression_record);
         }
         break;
       }
@@ -296,8 +303,14 @@ void Reader::UnmarkEOFInternal() {
   }
 
   Slice read_buffer;
-  Status status = file_->Read(remaining, &read_buffer,
-    backing_store_ + eof_offset_);
+  // TODO: rate limit log reader with approriate priority.
+  // TODO: avoid overcharging rate limiter:
+  // Note that the Read here might overcharge SequentialFileReader's internal
+  // rate limiter if priority is not IO_TOTAL, e.g., when there is not enough
+  // content left until EOF to read.
+  Status status =
+      file_->Read(remaining, &read_buffer, backing_store_ + eof_offset_,
+                  Env::IO_TOTAL /* rate_limiter_priority */);
 
   size_t added = read_buffer.size();
   end_of_buffer_offset_ += added;
@@ -342,7 +355,13 @@ bool Reader::ReadMore(size_t* drop_size, int *error) {
   if (!eof_ && !read_error_) {
     // Last read was a full read, so this is a trailer to skip
     buffer_.clear();
-    Status status = file_->Read(kBlockSize, &buffer_, backing_store_);
+    // TODO: rate limit log reader with approriate priority.
+    // TODO: avoid overcharging rate limiter:
+    // Note that the Read here might overcharge SequentialFileReader's internal
+    // rate limiter if priority is not IO_TOTAL, e.g., when there is not enough
+    // content left until EOF to read.
+    Status status = file_->Read(kBlockSize, &buffer_, backing_store_,
+                                Env::IO_TOTAL /* rate_limiter_priority */);
     TEST_SYNC_POINT_CALLBACK("LogReader::ReadMore:AfterReadFile", &status);
     end_of_buffer_offset_ += buffer_.size();
     if (!status.ok()) {
@@ -450,9 +469,43 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result, size_t* drop_size) {
 
     buffer_.remove_prefix(header_size + length);
 
-    *result = Slice(header + header_size, length);
-    return type;
+    if (!uncompress_ || type == kSetCompressionType) {
+      *result = Slice(header + header_size, length);
+      return type;
+    } else {
+      // Uncompress compressed records
+      uncompressed_record_.clear();
+      size_t uncompressed_size = 0;
+      int remaining = 0;
+      do {
+        remaining = uncompress_->Uncompress(header + header_size, length,
+                                            uncompressed_buffer_.get(),
+                                            &uncompressed_size);
+        if (remaining < 0) {
+          buffer_.clear();
+          return kBadRecord;
+        }
+        if (uncompressed_size > 0) {
+          uncompressed_record_.append(uncompressed_buffer_.get(),
+                                      uncompressed_size);
+        }
+      } while (remaining > 0 || uncompressed_size == kBlockSize);
+      *result = Slice(uncompressed_record_);
+      return type;
+    }
   }
+}
+
+// Initialize uncompress related fields
+void Reader::InitCompression(const CompressionTypeRecord& compression_record) {
+  compression_type_ = compression_record.GetCompressionType();
+  compression_type_record_read_ = true;
+  constexpr uint32_t compression_format_version = 2;
+  uncompress_ = StreamingUncompress::Create(
+      compression_type_, compression_format_version, kBlockSize);
+  assert(uncompress_ != nullptr);
+  uncompressed_buffer_ = std::unique_ptr<char[]>(new char[kBlockSize]);
+  assert(uncompressed_buffer_);
 }
 
 bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
@@ -461,6 +514,9 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
   assert(scratch != nullptr);
   record->clear();
   scratch->clear();
+  if (uncompress_) {
+    uncompress_->Reset();
+  }
 
   uint64_t prospective_record_offset = 0;
   uint64_t physical_record_offset = end_of_buffer_offset_ - buffer_.size();
@@ -562,7 +618,7 @@ bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
           ReportCorruption(fragment.size(),
                            "could not decode SetCompressionType record");
         } else {
-          compression_type_ = compression_record.GetCompressionType();
+          InitCompression(compression_record);
         }
         break;
       }
@@ -595,7 +651,13 @@ bool FragmentBufferedReader::TryReadMore(size_t* drop_size, int* error) {
   if (!eof_ && !read_error_) {
     // Last read was a full read, so this is a trailer to skip
     buffer_.clear();
-    Status status = file_->Read(kBlockSize, &buffer_, backing_store_);
+    // TODO: rate limit log reader with approriate priority.
+    // TODO: avoid overcharging rate limiter:
+    // Note that the Read here might overcharge SequentialFileReader's internal
+    // rate limiter if priority is not IO_TOTAL, e.g., when there is not enough
+    // content left until EOF to read.
+    Status status = file_->Read(kBlockSize, &buffer_, backing_store_,
+                                Env::IO_TOTAL /* rate_limiter_priority */);
     end_of_buffer_offset_ += buffer_.size();
     if (!status.ok()) {
       buffer_.clear();
@@ -700,9 +762,33 @@ bool FragmentBufferedReader::TryReadFragment(
 
   buffer_.remove_prefix(header_size + length);
 
-  *fragment = Slice(header + header_size, length);
-  *fragment_type_or_err = type;
-  return true;
+  if (!uncompress_ || type == kSetCompressionType) {
+    *fragment = Slice(header + header_size, length);
+    *fragment_type_or_err = type;
+    return true;
+  } else {
+    // Uncompress compressed records
+    uncompressed_record_.clear();
+    size_t uncompressed_size = 0;
+    int remaining = 0;
+    do {
+      remaining = uncompress_->Uncompress(header + header_size, length,
+                                          uncompressed_buffer_.get(),
+                                          &uncompressed_size);
+      if (remaining < 0) {
+        buffer_.clear();
+        *fragment_type_or_err = kBadRecord;
+        return true;
+      }
+      if (uncompressed_size > 0) {
+        uncompressed_record_.append(uncompressed_buffer_.get(),
+                                    uncompressed_size);
+      }
+    } while (remaining > 0 || uncompressed_size == kBlockSize);
+    *fragment = Slice(std::move(uncompressed_record_));
+    *fragment_type_or_err = type;
+    return true;
+  }
 }
 
 }  // namespace log

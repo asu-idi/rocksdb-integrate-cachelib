@@ -39,8 +39,8 @@ DEFINE_string(key_len_percent_dist, "",
               "24 bytes. If not specified, it will be evenly distributed");
 
 DEFINE_int32(key_window_scale_factor, 10,
-              "This value will be multiplied by 100 to come up with a window "
-              "size for varying the key length");
+             "This value will be multiplied by 100 to come up with a window "
+             "size for varying the key length");
 
 DEFINE_int32(column_families, 10, "Number of column families");
 
@@ -187,9 +187,15 @@ DEFINE_int32(open_files, ROCKSDB_NAMESPACE::Options().max_open_files,
              "Maximum number of files to keep open at the same time "
              "(use default if == 0)");
 
-DEFINE_int64(compressed_cache_size, -1,
+DEFINE_int64(compressed_cache_size, 0,
              "Number of bytes to use as a cache of compressed data."
-             " Negative means use default settings.");
+             " 0 means use default settings.");
+
+DEFINE_int32(
+    compressed_cache_numshardbits, -1,
+    "Number of shards for the compressed block cache is 2 ** "
+    "compressed_cache_numshardbits. Negative value means default settings. "
+    "This is applied only if compressed_cache_size is greater than 0.");
 
 DEFINE_int32(compaction_style, ROCKSDB_NAMESPACE::Options().compaction_style,
              "");
@@ -224,6 +230,10 @@ DEFINE_int32(
     ROCKSDB_NAMESPACE::BlockBasedTableOptions().index_block_restart_interval,
     "Number of keys between restart points "
     "for delta encoding of keys in index block.");
+
+DEFINE_bool(disable_auto_compactions,
+            ROCKSDB_NAMESPACE::Options().disable_auto_compactions,
+            "If true, RocksDB internally will not trigger compactions.");
 
 DEFINE_int32(max_background_compactions,
              ROCKSDB_NAMESPACE::Options().max_background_compactions,
@@ -300,6 +310,26 @@ DEFINE_int32(cache_numshardbits, 6,
 DEFINE_bool(cache_index_and_filter_blocks, false,
             "True if indexes/filters should be cached in block cache.");
 
+DEFINE_bool(charge_compression_dictionary_building_buffer, false,
+            "Setting for "
+            "CacheEntryRoleOptions::charged of"
+            "CacheEntryRole::kCompressionDictionaryBuildingBuffer");
+
+DEFINE_bool(charge_filter_construction, false,
+            "Setting for "
+            "CacheEntryRoleOptions::charged of"
+            "CacheEntryRole::kFilterConstruction");
+
+DEFINE_bool(charge_table_reader, false,
+            "Setting for "
+            "CacheEntryRoleOptions::charged of"
+            "CacheEntryRole::kBlockBasedTableReader");
+
+DEFINE_bool(charge_file_metadata, false,
+            "Setting for "
+            "CacheEntryRoleOptions::charged of"
+            "kFileMetadata");
+
 DEFINE_int32(
     top_level_index_pinning,
     static_cast<int32_t>(ROCKSDB_NAMESPACE::PinningTier::kFallback),
@@ -318,8 +348,7 @@ DEFINE_int32(
     "Type of pinning for unpartitioned metadata blocks (see `enum PinningTier` "
     "in table.h)");
 
-DEFINE_bool(use_clock_cache, false,
-            "Replace default LRU block cache with clock cache.");
+DEFINE_string(cache_type, "lru_cache", "Type of block cache.");
 
 DEFINE_uint64(subcompactions, 1,
               "Maximum number of subcompactions to divide L0-L1 compactions "
@@ -415,6 +444,12 @@ DEFINE_uint64(blob_compaction_readahead_size,
                   .blob_compaction_readahead_size,
               "[Integrated BlobDB] Compaction readahead for blob files.");
 
+DEFINE_int32(
+    blob_file_starting_level,
+    ROCKSDB_NAMESPACE::AdvancedColumnFamilyOptions().blob_file_starting_level,
+    "[Integrated BlobDB] Enable writing blob files during flushes and "
+    "compactions starting from the specified level.");
+
 static const bool FLAGS_subcompactions_dummy __attribute__((__unused__)) =
     RegisterFlagValidator(&FLAGS_subcompactions, &ValidateUint32Range);
 
@@ -433,10 +468,6 @@ static const bool FLAGS_reopen_dummy __attribute__((__unused__)) =
 DEFINE_double(bloom_bits, 10,
               "Bloom filter bits per key. "
               "Negative means use default settings.");
-
-DEFINE_bool(use_block_based_filter, false,
-            "use block based filter"
-            "instead of full filter for block based table");
 
 DEFINE_int32(
     ribbon_starting_level, 999,
@@ -470,7 +501,9 @@ DEFINE_string(db, "", "Use the db with the following name.");
 DEFINE_string(secondaries_base, "",
               "Use this path as the base path for secondary instances.");
 
-DEFINE_bool(test_secondary, false, "Test secondary instance.");
+DEFINE_bool(test_secondary, false,
+            "If true, start an additional secondary instance which can be used "
+            "for verification.");
 
 DEFINE_string(
     expected_values_dir, "",
@@ -506,6 +539,15 @@ DEFINE_bool(statistics, false, "Create database statistics");
 DEFINE_bool(sync, false, "Sync all writes to disk");
 
 DEFINE_bool(use_fsync, false, "If true, issue fsync instead of fdatasync");
+
+DEFINE_uint64(bytes_per_sync, ROCKSDB_NAMESPACE::Options().bytes_per_sync,
+              "If nonzero, sync SST file data incrementally after every "
+              "`bytes_per_sync` bytes are written");
+
+DEFINE_uint64(wal_bytes_per_sync,
+              ROCKSDB_NAMESPACE::Options().wal_bytes_per_sync,
+              "If nonzero, sync WAL file data incrementally after every "
+              "`bytes_per_sync` bytes are written");
 
 DEFINE_int32(kill_random_test, 0,
              "If non-zero, kill at various points in source code with "
@@ -550,6 +592,12 @@ DEFINE_bool(rate_limit_user_ops, false,
             "When true use Env::IO_USER priority level to charge internal rate "
             "limiter for reads associated with user operations.");
 
+DEFINE_bool(rate_limit_auto_wal_flush, false,
+            "When true use Env::IO_USER priority level to charge internal rate "
+            "limiter for automatic WAL flush (`Options::manual_wal_flush` == "
+            "false) after the user "
+            "write operation.");
+
 DEFINE_uint64(sst_file_manager_bytes_per_sec, 0,
               "Set `Options::sst_file_manager` to delete at this rate. By "
               "default the deletion rate is unbounded.");
@@ -591,7 +639,7 @@ DEFINE_int32(ingest_external_file_one_in, 0,
              "every N operations on average.  0 indicates IngestExternalFile() "
              "is disabled.");
 
-DEFINE_int32(ingest_external_file_width, 1000,
+DEFINE_int32(ingest_external_file_width, 100,
              "The width of the ingested external files.");
 
 DEFINE_int32(compact_files_one_in, 0,
@@ -712,6 +760,13 @@ DEFINE_uint64(compression_max_dict_buffer_bytes, 0,
               "Buffering limit for SST file data to sample for dictionary "
               "compression.");
 
+DEFINE_bool(
+    compression_use_zstd_dict_trainer, true,
+    "Use zstd's trainer to generate dictionary. If the options is false, "
+    "zstd's finalizeDictionary() API is used to generate dictionary. "
+    "ZSTD 1.4.5+ is required. If ZSTD 1.4.5+ is not linked with the binary, "
+    "this flag will have the default value true.");
+
 DEFINE_string(bottommost_compression_type, "disable",
               "Algorithm to use to compress bottommost level of the database. "
               "\"disable\" means disabling the feature");
@@ -737,11 +792,6 @@ static const bool FLAGS_log2_keys_per_lock_dummy __attribute__((__unused__)) =
 DEFINE_uint64(max_manifest_file_size, 16384, "Maximum size of a MANIFEST file");
 
 DEFINE_bool(in_place_update, false, "On true, does inplace update in memtable");
-
-DEFINE_int32(secondary_catch_up_one_in, 0,
-             "If non-zero, the secondaries attemp to catch up with the primary "
-             "once for every N operations on average. 0 indicates the "
-             "secondaries do not try to catch up after open.");
 
 DEFINE_string(memtablerep, "skip_list", "");
 
@@ -811,7 +861,7 @@ DEFINE_int32(approximate_size_one_in, 64,
              " random key ranges.");
 
 DEFINE_int32(read_fault_one_in, 1000,
-            "On non-zero, enables fault injection on read");
+             "On non-zero, enables fault injection on read");
 
 DEFINE_int32(get_property_one_in, 1000,
              "If non-zero, then DB::GetProperty() will be called to get various"
@@ -883,5 +933,47 @@ DEFINE_int32(prepopulate_block_cache,
                                       PrepopulateBlockCache::kDisable),
              "Options related to cache warming (see `enum "
              "PrepopulateBlockCache` in table.h)");
+
+DEFINE_bool(two_write_queues, false,
+            "Set to true to enable two write queues. Default: false");
+#ifndef ROCKSDB_LITE
+
+DEFINE_bool(use_only_the_last_commit_time_batch_for_recovery, false,
+            "If true, the commit-time write batch will not be immediately "
+            "inserted into the memtables. Default: false");
+
+DEFINE_uint64(
+    wp_snapshot_cache_bits, 7ull,
+    "Number of bits to represent write-prepared transaction db's snapshot "
+    "cache. Default: 7 (128 entries)");
+
+DEFINE_uint64(wp_commit_cache_bits, 23ull,
+              "Number of bits to represent write-prepared transaction db's "
+              "commit cache. Default: 23 (8M entries)");
+#endif  // !ROCKSDB_LITE
+
+DEFINE_bool(adaptive_readahead, false,
+            "Carry forward internal auto readahead size from one file to next "
+            "file at each level during iteration");
+DEFINE_bool(
+    async_io, false,
+    "Does asynchronous prefetching when internal auto readahead is enabled");
+
+DEFINE_string(wal_compression, "none",
+              "Algorithm to use for WAL compression. none to disable.");
+
+DEFINE_bool(
+    verify_sst_unique_id_in_manifest, false,
+    "Enable DB options `verify_sst_unique_id_in_manifest`, if true, during "
+    "DB-open try verifying the SST unique id between MANIFEST and SST "
+    "properties.");
+
+DEFINE_int32(
+    create_timestamped_snapshot_one_in, 0,
+    "On non-zero, create timestamped snapshots upon transaction commits.");
+
+DEFINE_bool(allow_data_in_errors,
+            ROCKSDB_NAMESPACE::Options().allow_data_in_errors,
+            "If true, allow logging data, e.g. key, value in LOG files.");
 
 #endif  // GFLAGS

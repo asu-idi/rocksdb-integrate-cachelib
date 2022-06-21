@@ -492,6 +492,23 @@ struct DBOptions {
   // Default: false
   bool track_and_verify_wals_in_manifest = false;
 
+  // EXPERIMENTAL: This API/behavior is subject to change
+  // If true, during DB-open it verifies the SST unique id between MANIFEST
+  // and SST properties, which is to make sure the SST is not overwritten or
+  // misplaced. A corruption error will be reported if mismatch detected, but
+  // only when MANIFEST tracks the unique id, which starts from version 7.3.
+  // The unique id is an internal unique id and subject to change.
+  //
+  // Note:
+  // 1. if enabled, it opens every SST files during DB open to read the unique
+  //    id from SST properties, so it's recommended to have `max_open_files=-1`
+  //    to pre-open the SST files before the verification.
+  // 2. existing SST files won't have its unique_id tracked in MANIFEST, then
+  //    verification will be skipped.
+  //
+  // Default: false
+  bool verify_sst_unique_id_in_manifest = false;
+
   // Use the specified object to interact with the environment,
   // e.g. to read/write files, schedule background work, etc. In the near
   // future, support for doing storage operations such as read/write files
@@ -507,6 +524,9 @@ struct DBOptions {
   // - Reads associated with a `ReadOptions` can be charged at
   //   `ReadOptions::rate_limiter_priority` (see that option's API doc for usage
   //   and limitations).
+  // - Writes associated with a `WriteOptions` can be charged at
+  //   `WriteOptions::rate_limiter_priority` (see that option's API doc for
+  //   usage and limitations).
   //
   // Rate limiting is disabled if nullptr. If rate limiter is enabled,
   // bytes_per_sync is set to 1MB by default.
@@ -547,6 +567,10 @@ struct DBOptions {
   // files opened are always kept open. You can estimate number of files based
   // on target_file_size_base and target_file_size_multiplier for level-based
   // compaction. For universal-style compaction, you can usually set it to -1.
+  //
+  // A high value or -1 for this option can cause high memory usage.
+  // See BlockBasedTableOptions::cache_usage_options to constrain
+  // memory usage in case of block based table format.
   //
   // Default: -1
   //
@@ -760,6 +784,14 @@ struct DBOptions {
 
   // Allow the OS to mmap file for reading sst tables.
   // Not recommended for 32-bit OS.
+  // When the option is set to true and compression is disabled, the blocks
+  // will not be copied and will be read directly from the mmap-ed memory
+  // area, and the block will not be inserted into the block cache. However,
+  // checksums will still be checked if ReadOptions.verify_checksums is set
+  // to be true. It means a checksum check every time a block is read, more
+  // than the setup where the option is set to false and the block cache is
+  // used. The common use of the options is to run RocksDB on ramfs, where
+  // checksum verification is usually not needed.
   // Default: false
   bool allow_mmap_reads = false;
 
@@ -1135,8 +1167,7 @@ struct DBOptions {
 #endif  // ROCKSDB_LITE
 
   // If true, then DB::Open / CreateColumnFamily / DropColumnFamily
-  // / SetOptions will fail if options file is not detected or properly
-  // persisted.
+  // SetOptions will fail if options file is not properly persisted.
   //
   // DEFAULT: false
   bool fail_if_options_file_error = false;
@@ -1322,6 +1353,19 @@ struct DBOptions {
   //
   // Default: kNonVolatileBlockTier
   CacheTier lowest_used_cache_tier = CacheTier::kNonVolatileBlockTier;
+
+  // If set to false, when compaction or flush sees a SingleDelete followed by
+  // a Delete for the same user key, compaction job will not fail.
+  // Otherwise, compaction job will fail.
+  // This is a temporary option to help existing use cases migrate, and
+  // will be removed in a future release.
+  // Warning: do not set to false unless you are trying to migrate existing
+  // data in which the contract of single delete
+  // (https://github.com/facebook/rocksdb/wiki/Single-Delete) is not enforced,
+  // thus has Delete mixed with SingleDelete for the same user key. Violation
+  // of the contract leads to undefined behaviors with high possibility of data
+  // inconsistency, e.g. deleted old data become visible again, etc.
+  bool enforce_single_del_contracts = true;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -1368,7 +1412,6 @@ struct Options : public DBOptions, public ColumnFamilyOptions {
   Options* DisableExtraChecks();
 };
 
-//
 // An application can issue a read request (via Get/Iterators) and specify
 // if that read should process data that ALREADY resides on a specified cache
 // level. For example, if an application specifies kBlockCacheTier then the
@@ -1486,6 +1529,17 @@ struct ReadOptions {
   // from total_order_seek, based on seek key, and iterator upper bound.
   // Not supported in ROCKSDB_LITE mode, in the way that even with value true
   // prefix mode is not used.
+  // BUG: Using Comparator::IsSameLengthImmediateSuccessor and
+  // SliceTransform::FullLengthEnabled to enable prefix mode in cases where
+  // prefix of upper bound differs from prefix of seek key has a flaw.
+  // If present in the DB, "short keys" (shorter than "full length" prefix)
+  // can be omitted from auto_prefix_mode iteration when they would be present
+  // in total_order_seek iteration, regardless of whether the short keys are
+  // "in domain" of the prefix extractor. This is not an issue if no short
+  // keys are added to DB or are not expected to be returned by such
+  // iterators. (We are also assuming the new condition on
+  // IsSameLengthImmediateSuccessor is satisfied; see its BUG section).
+  // A bug example is in DBTest2::AutoPrefixMode1, search for "BUG".
   // Default: false
   bool auto_prefix_mode;
 
@@ -1587,16 +1641,21 @@ struct ReadOptions {
   // is a `PlainTableFactory`) and cuckoo tables (these can exist when
   // `ColumnFamilyOptions::table_factory` is a `CuckooTableFactory`).
   //
-  // The new `DB::MultiGet()` APIs (i.e., the ones returning `void`) will return
-  // `Status::NotSupported` when that operation requires file read(s) and
-  // `rate_limiter_priority != Env::IO_TOTAL`.
-  //
   // The bytes charged to rate limiter may not exactly match the file read bytes
   // since there are some seemingly insignificant reads, like for file
   // headers/footers, that we currently do not charge to rate limiter.
   //
   // Default: `Env::IO_TOTAL`.
   Env::IOPriority rate_limiter_priority = Env::IO_TOTAL;
+
+  // Experimental
+  //
+  // If async_io is enabled, RocksDB will prefetch some of data asynchronously.
+  // RocksDB apply it if reads are sequential and its internal automatic
+  // prefetching.
+  //
+  // Default: false
+  bool async_io;
 
   ReadOptions();
   ReadOptions(bool cksum, bool cache);
@@ -1659,13 +1718,37 @@ struct WriteOptions {
   // Default: false
   bool memtable_insert_hint_per_batch;
 
+  // For writes associated with this option, charge the internal rate
+  // limiter (see `DBOptions::rate_limiter`) at the specified priority. The
+  // special value `Env::IO_TOTAL` disables charging the rate limiter.
+  //
+  // Currently the support covers automatic WAL flushes, which happen during
+  // live updates (`Put()`, `Write()`, `Delete()`, etc.)
+  // when `WriteOptions::disableWAL == false`
+  // and `DBOptions::manual_wal_flush == false`.
+  //
+  // Only `Env::IO_USER` and `Env::IO_TOTAL` are allowed
+  // due to implementation constraints.
+  //
+  // Default: `Env::IO_TOTAL`
+  Env::IOPriority rate_limiter_priority;
+
+  // `protection_bytes_per_key` is the number of bytes used to store
+  // protection information for each key entry. Currently supported values are
+  // zero (disabled) and eight.
+  //
+  // Default: zero (disabled).
+  size_t protection_bytes_per_key;
+
   WriteOptions()
       : sync(false),
         disableWAL(false),
         ignore_missing_column_families(false),
         no_slowdown(false),
         low_pri(false),
-        memtable_insert_hint_per_batch(false) {}
+        memtable_insert_hint_per_batch(false),
+        rate_limiter_priority(Env::IO_TOTAL),
+        protection_bytes_per_key(0) {}
 };
 
 // Options that control flush operations
@@ -1722,6 +1805,17 @@ enum class BottommostLevelCompaction {
   kForceOptimized,
 };
 
+// For manual compaction, we can configure if we want to skip/force garbage
+// collection of blob files.
+enum class BlobGarbageCollectionPolicy {
+  // Force blob file garbage collection.
+  kForce,
+  // Skip blob file garbage collection.
+  kDisable,
+  // Inherit blob file garbage collection policy from ColumnFamilyOptions.
+  kUseDefault,
+};
+
 // CompactRangeOptions is used by CompactRange() call.
 struct CompactRangeOptions {
   // If true, no other compaction will run at the same time as this
@@ -1754,6 +1848,26 @@ struct CompactRangeOptions {
   // Cancellation can be delayed waiting on automatic compactions when used
   // together with `exclusive_manual_compaction == true`.
   std::atomic<bool>* canceled = nullptr;
+  // NOTE: Calling DisableManualCompaction() overwrites the uer-provided
+  // canceled variable in CompactRangeOptions.
+  // Typically, when CompactRange is being called in one thread (t1) with
+  // canceled = false, and DisableManualCompaction is being called in the
+  // other thread (t2), manual compaction is disabled normally, even if the
+  // compaction iterator may still scan a few items before *canceled is
+  // set to true
+
+  // If set to kForce, RocksDB will override enable_blob_file_garbage_collection
+  // to true; if set to kDisable, RocksDB will override it to false, and
+  // kUseDefault leaves the setting in effect. This enables customers to both
+  // force-enable and force-disable GC when calling CompactRange.
+  BlobGarbageCollectionPolicy blob_garbage_collection_policy =
+      BlobGarbageCollectionPolicy::kUseDefault;
+
+  // If set to < 0 or > 1, RocksDB leaves blob_garbage_collection_age_cutoff
+  // from ColumnFamilyOptions in effect. Otherwise, it will override the
+  // user-provided setting. This enables customers to selectively override the
+  // age cutoff.
+  double blob_garbage_collection_age_cutoff = -1;
 };
 
 // IngestExternalFileOptions is used by IngestExternalFile()
@@ -1823,6 +1937,14 @@ struct IngestExternalFileOptions {
   // ingestion. However, if no checksum information is provided with the
   // ingested files, DB will generate the checksum and store in the Manifest.
   bool verify_file_checksum = true;
+  // Set to TRUE if user wants file to be ingested to the bottommost level. An
+  // error of Status::TryAgain() will be returned if a file cannot fit in the
+  // bottommost level when calling
+  // DB::IngestExternalFile()/DB::IngestExternalFiles(). The user should clear
+  // the bottommost level in the overlapping range before re-attempt.
+  //
+  // ingest_behind takes precedence over fail_if_not_bottommost_level.
+  bool fail_if_not_bottommost_level = false;
 };
 
 enum TraceFilterType : uint64_t {
@@ -1900,10 +2022,28 @@ struct CompactionServiceOptionsOverride {
   std::shared_ptr<TableFactory> table_factory;
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory = nullptr;
 
+  // Only subsets of events are triggered in remote compaction worker, like:
+  // `OnTableFileCreated`, `OnTableFileCreationStarted`,
+  // `ShouldBeNotifiedOnFileIO` `OnSubcompactionBegin`,
+  // `OnSubcompactionCompleted`, etc. Worth mentioning, `OnCompactionBegin` and
+  // `OnCompactionCompleted` won't be triggered. They will be triggered on the
+  // primary DB side.
+  std::vector<std::shared_ptr<EventListener>> listeners;
+
   // statistics is used to collect DB operation metrics, the metrics won't be
   // returned to CompactionService primary host, to collect that, the user needs
   // to set it here.
   std::shared_ptr<Statistics> statistics = nullptr;
+
+  // Only compaction generated SST files use this user defined table properties
+  // collector.
+  std::vector<std::shared_ptr<TablePropertiesCollectorFactory>>
+      table_properties_collector_factories;
+};
+
+struct OpenAndCompactOptions {
+  // Allows cancellation of an in-progress compaction.
+  std::atomic<bool>* canceled = nullptr;
 };
 
 #ifndef ROCKSDB_LITE

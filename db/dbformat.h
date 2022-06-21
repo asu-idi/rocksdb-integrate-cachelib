@@ -66,7 +66,9 @@ enum ValueType : unsigned char {
   kTypeBeginUnprepareXID = 0x13,  // WAL only.
   kTypeDeletionWithTimestamp = 0x14,
   kTypeCommitXIDAndTimestamp = 0x15,  // WAL only
-  kMaxValue = 0x7F                    // Not used for storing records.
+  kTypeWideColumnEntity = 0x16,
+  kTypeColumnFamilyWideColumnEntity = 0x17,  // WAL only
+  kMaxValue = 0x7F                           // Not used for storing records.
 };
 
 // Defined in dbformat.cc
@@ -76,8 +78,8 @@ extern const ValueType kValueTypeForSeekForPrev;
 // Checks whether a type is an inline value type
 // (i.e. a type used in memtable skiplist and sst file datablock).
 inline bool IsValueType(ValueType t) {
-  return t <= kTypeMerge || t == kTypeSingleDeletion || t == kTypeBlobIndex ||
-         kTypeDeletionWithTimestamp == t;
+  return t <= kTypeMerge || kTypeSingleDeletion == t || kTypeBlobIndex == t ||
+         kTypeDeletionWithTimestamp == t || kTypeWideColumnEntity == t;
 }
 
 // Checks whether a type is from user operation
@@ -90,7 +92,8 @@ inline bool IsExtendedValueType(ValueType t) {
 // can be packed together into 64-bits.
 static const SequenceNumber kMaxSequenceNumber = ((0x1ull << 56) - 1);
 
-static const SequenceNumber kDisableGlobalSequenceNumber = port::kMaxUint64;
+static const SequenceNumber kDisableGlobalSequenceNumber =
+    std::numeric_limits<uint64_t>::max();
 
 constexpr uint64_t kNumInternalBytes = 8;
 
@@ -207,6 +210,13 @@ inline Slice ExtractTimestampFromUserKey(const Slice& user_key, size_t ts_sz) {
   return Slice(user_key.data() + user_key.size() - ts_sz, ts_sz);
 }
 
+inline Slice ExtractTimestampFromKey(const Slice& internal_key, size_t ts_sz) {
+  const size_t key_size = internal_key.size();
+  assert(key_size >= kNumInternalBytes + ts_sz);
+  return Slice(internal_key.data() + key_size - ts_sz - kNumInternalBytes,
+               ts_sz);
+}
+
 inline uint64_t ExtractInternalKeyFooter(const Slice& internal_key) {
   assert(internal_key.size() >= kNumInternalBytes);
   const size_t n = internal_key.size();
@@ -312,7 +322,7 @@ class InternalKey {
   }
 
   Slice user_key() const { return ExtractUserKey(rep_); }
-  size_t size() { return rep_.size(); }
+  size_t size() const { return rep_.size(); }
 
   void Set(const Slice& _user_key, SequenceNumber s, ValueType t) {
     SetFrom(ParsedInternalKey(_user_key, s, t));
@@ -617,7 +627,7 @@ class IterKey {
 };
 
 // Convert from a SliceTransform of user keys, to a SliceTransform of
-// user keys.
+// internal keys.
 class InternalKeySliceTransform : public SliceTransform {
  public:
   explicit InternalKeySliceTransform(const SliceTransform* transform)

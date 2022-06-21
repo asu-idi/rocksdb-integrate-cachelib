@@ -92,6 +92,15 @@ class RandomAccessFileReader {
   const Temperature file_temperature_;
   const bool is_last_level_;
 
+  struct ReadAsyncInfo {
+#ifndef ROCKSDB_LITE
+    FileOperationInfo::StartTimePoint fs_start_ts_;
+#endif
+    uint64_t start_time_;
+    std::function<void(const FSReadRequest&, void*)> cb_;
+    void* cb_arg_;
+  };
+
  public:
   explicit RandomAccessFileReader(
       std::unique_ptr<FSRandomAccessFile>&& raf, const std::string& _file_name,
@@ -163,8 +172,11 @@ class RandomAccessFileReader {
                      size_t num_reqs, AlignedBuf* aligned_buf,
                      Env::IOPriority rate_limiter_priority) const;
 
-  IOStatus Prefetch(uint64_t offset, size_t n) const {
-    return file_->Prefetch(offset, n, IOOptions(), nullptr);
+  IOStatus Prefetch(uint64_t offset, size_t n,
+                    const Env::IOPriority rate_limiter_priority) const {
+    IOOptions opts;
+    opts.rate_limiter_priority = rate_limiter_priority;
+    return file_->Prefetch(offset, n, opts, nullptr);
   }
 
   FSRandomAccessFile* file() { return file_.get(); }
@@ -174,5 +186,12 @@ class RandomAccessFileReader {
   bool use_direct_io() const { return file_->use_direct_io(); }
 
   IOStatus PrepareIOOptions(const ReadOptions& ro, IOOptions& opts);
+
+  IOStatus ReadAsync(FSReadRequest& req, const IOOptions& opts,
+                     std::function<void(const FSReadRequest&, void*)> cb,
+                     void* cb_arg, void** io_handle, IOHandleDeleter* del_fn,
+                     Env::IOPriority rate_limiter_priority);
+
+  void ReadAsyncCallback(const FSReadRequest& req, void* cb_arg);
 };
 }  // namespace ROCKSDB_NAMESPACE

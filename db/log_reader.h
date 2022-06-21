@@ -103,6 +103,10 @@ class Reader {
     return static_cast<size_t>(end_of_buffer_offset_);
   }
 
+  bool IsCompressedAndEmptyFile() {
+    return !first_record_read_ && compression_type_record_read_;
+  }
+
  protected:
   std::shared_ptr<Logger> info_log_;
   const std::unique_ptr<SequentialFileReader> file_;
@@ -136,6 +140,11 @@ class Reader {
   CompressionType compression_type_;
   // Track whether the compression type record has been read or not.
   bool compression_type_record_read_;
+  StreamingUncompress* uncompress_;
+  // Reusable uncompressed output buffer
+  std::unique_ptr<char[]> uncompressed_buffer_;
+  // Reusable uncompressed record
+  std::string uncompressed_record_;
 
   // Extend record types with the following special values
   enum {
@@ -167,6 +176,8 @@ class Reader {
   // buffer_ must be updated to remove the dropped bytes prior to invocation.
   void ReportCorruption(size_t bytes, const char* reason);
   void ReportDrop(size_t bytes, const Status& reason);
+
+  void InitCompression(const CompressionTypeRecord& compression_record);
 };
 
 class FragmentBufferedReader : public Reader {

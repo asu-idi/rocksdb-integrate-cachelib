@@ -41,8 +41,8 @@ IOStatus WritableFileWriter::Create(const std::shared_ptr<FileSystem>& fs,
   return io_s;
 }
 
-IOStatus WritableFileWriter::Append(const Slice& data,
-                                    uint32_t crc32c_checksum) {
+IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
+                                    Env::IOPriority op_rate_limiter_priority) {
   const char* src = data.data();
   size_t left = data.size();
   IOStatus s;
@@ -54,10 +54,14 @@ IOStatus WritableFileWriter::Append(const Slice& data,
   UpdateFileChecksum(data);
 
   {
+    IOOptions io_options;
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
     IOSTATS_TIMER_GUARD(prepare_write_nanos);
     TEST_SYNC_POINT("WritableFileWriter::Append:BeforePrepareWrite");
     writable_file_->PrepareWrite(static_cast<size_t>(GetFileSize()), left,
-                                 IOOptions(), nullptr);
+                                 io_options, nullptr);
   }
 
   // See whether we need to enlarge the buffer to avoid the flush
@@ -79,7 +83,7 @@ IOStatus WritableFileWriter::Append(const Slice& data,
   // Flush only when buffered I/O
   if (!use_direct_io() && (buf_.Capacity() - buf_.CurrentSize()) < left) {
     if (buf_.CurrentSize() > 0) {
-      s = Flush();
+      s = Flush(op_rate_limiter_priority);
       if (!s.ok()) {
         return s;
       }
@@ -109,7 +113,7 @@ IOStatus WritableFileWriter::Append(const Slice& data,
           src += appended;
 
           if (left > 0) {
-            s = Flush();
+            s = Flush(op_rate_limiter_priority);
             if (!s.ok()) {
               break;
             }
@@ -119,7 +123,7 @@ IOStatus WritableFileWriter::Append(const Slice& data,
     } else {
       assert(buf_.CurrentSize() == 0);
       buffered_data_crc32c_checksum_ = crc32c_checksum;
-      s = WriteBufferedWithChecksum(src, left);
+      s = WriteBufferedWithChecksum(src, left, op_rate_limiter_priority);
     }
   } else {
     // In this case, either we do not need to do the data verification or
@@ -139,7 +143,7 @@ IOStatus WritableFileWriter::Append(const Slice& data,
         src += appended;
 
         if (left > 0) {
-          s = Flush();
+          s = Flush(op_rate_limiter_priority);
           if (!s.ok()) {
             break;
           }
@@ -150,21 +154,23 @@ IOStatus WritableFileWriter::Append(const Slice& data,
       assert(buf_.CurrentSize() == 0);
       if (perform_data_verification_ && buffered_data_with_checksum_) {
         buffered_data_crc32c_checksum_ = crc32c::Value(src, left);
-        s = WriteBufferedWithChecksum(src, left);
+        s = WriteBufferedWithChecksum(src, left, op_rate_limiter_priority);
       } else {
-        s = WriteBuffered(src, left);
+        s = WriteBuffered(src, left, op_rate_limiter_priority);
       }
     }
   }
 
   TEST_KILL_RANDOM("WritableFileWriter::Append:1");
   if (s.ok()) {
-    filesize_ += data.size();
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    filesize_.store(cur_size + data.size(), std::memory_order_release);
   }
   return s;
 }
 
-IOStatus WritableFileWriter::Pad(const size_t pad_bytes) {
+IOStatus WritableFileWriter::Pad(const size_t pad_bytes,
+                                 Env::IOPriority op_rate_limiter_priority) {
   assert(pad_bytes < kDefaultPageSize);
   size_t left = pad_bytes;
   size_t cap = buf_.Capacity() - buf_.CurrentSize();
@@ -178,7 +184,7 @@ IOStatus WritableFileWriter::Pad(const size_t pad_bytes) {
     buf_.PadWith(append_bytes, 0);
     left -= append_bytes;
     if (left > 0) {
-      IOStatus s = Flush();
+      IOStatus s = Flush(op_rate_limiter_priority);
       if (!s.ok()) {
         return s;
       }
@@ -186,7 +192,8 @@ IOStatus WritableFileWriter::Pad(const size_t pad_bytes) {
     cap = buf_.Capacity() - buf_.CurrentSize();
   }
   pending_sync_ = true;
-  filesize_ += pad_bytes;
+  uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+  filesize_.store(cur_size + pad_bytes, std::memory_order_release);
   if (perform_data_verification_) {
     buffered_data_crc32c_checksum_ =
         crc32c::Extend(buffered_data_crc32c_checksum_,
@@ -210,6 +217,8 @@ IOStatus WritableFileWriter::Close() {
   s = Flush();  // flush cache to OS
 
   IOStatus interim;
+  IOOptions io_options;
+  io_options.rate_limiter_priority = writable_file_->GetIOPriority();
   // In direct I/O mode we write whole pages so
   // we need to let the file know where data ends.
   if (use_direct_io()) {
@@ -220,14 +229,15 @@ IOStatus WritableFileWriter::Close() {
         start_ts = FileOperationInfo::StartNow();
       }
 #endif
-      interim = writable_file_->Truncate(filesize_, IOOptions(), nullptr);
+      uint64_t filesz = filesize_.load(std::memory_order_acquire);
+      interim = writable_file_->Truncate(filesz, io_options, nullptr);
 #ifndef ROCKSDB_LITE
       if (ShouldNotifyListeners()) {
         auto finish_ts = FileOperationInfo::FinishNow();
         NotifyOnFileTruncateFinish(start_ts, finish_ts, s);
         if (!interim.ok()) {
           NotifyOnIOError(interim, FileOperationType::kTruncate, file_name(),
-                          filesize_);
+                          filesz);
         }
       }
 #endif
@@ -240,7 +250,7 @@ IOStatus WritableFileWriter::Close() {
           start_ts = FileOperationInfo::StartNow();
         }
 #endif
-        interim = writable_file_->Fsync(IOOptions(), nullptr);
+        interim = writable_file_->Fsync(io_options, nullptr);
 #ifndef ROCKSDB_LITE
         if (ShouldNotifyListeners()) {
           auto finish_ts = FileOperationInfo::FinishNow();
@@ -266,7 +276,7 @@ IOStatus WritableFileWriter::Close() {
       start_ts = FileOperationInfo::StartNow();
     }
 #endif
-    interim = writable_file_->Close(IOOptions(), nullptr);
+    interim = writable_file_->Close(io_options, nullptr);
 #ifndef ROCKSDB_LITE
     if (ShouldNotifyListeners()) {
       auto finish_ts = FileOperationInfo::FinishNow();
@@ -294,7 +304,7 @@ IOStatus WritableFileWriter::Close() {
 
 // write out the cached data to the OS cache or storage if direct I/O
 // enabled
-IOStatus WritableFileWriter::Flush() {
+IOStatus WritableFileWriter::Flush(Env::IOPriority op_rate_limiter_priority) {
   IOStatus s;
   TEST_KILL_RANDOM_WITH_WEIGHT("WritableFileWriter::Flush:0", REDUCE_ODDS2);
 
@@ -303,17 +313,19 @@ IOStatus WritableFileWriter::Flush() {
 #ifndef ROCKSDB_LITE
       if (pending_sync_) {
         if (perform_data_verification_ && buffered_data_with_checksum_) {
-          s = WriteDirectWithChecksum();
+          s = WriteDirectWithChecksum(op_rate_limiter_priority);
         } else {
-          s = WriteDirect();
+          s = WriteDirect(op_rate_limiter_priority);
         }
       }
 #endif  // !ROCKSDB_LITE
     } else {
       if (perform_data_verification_ && buffered_data_with_checksum_) {
-        s = WriteBufferedWithChecksum(buf_.BufferStart(), buf_.CurrentSize());
+        s = WriteBufferedWithChecksum(buf_.BufferStart(), buf_.CurrentSize(),
+                                      op_rate_limiter_priority);
       } else {
-        s = WriteBuffered(buf_.BufferStart(), buf_.CurrentSize());
+        s = WriteBuffered(buf_.BufferStart(), buf_.CurrentSize(),
+                          op_rate_limiter_priority);
       }
     }
     if (!s.ok()) {
@@ -328,7 +340,11 @@ IOStatus WritableFileWriter::Flush() {
       start_ts = FileOperationInfo::StartNow();
     }
 #endif
-    s = writable_file_->Flush(IOOptions(), nullptr);
+    IOOptions io_options;
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
+    s = writable_file_->Flush(io_options, nullptr);
 #ifndef ROCKSDB_LITE
     if (ShouldNotifyListeners()) {
       auto finish_ts = std::chrono::steady_clock::now();
@@ -359,8 +375,9 @@ IOStatus WritableFileWriter::Flush() {
     const uint64_t kBytesNotSyncRange =
         1024 * 1024;                                // recent 1MB is not synced.
     const uint64_t kBytesAlignWhenSync = 4 * 1024;  // Align 4KB.
-    if (filesize_ > kBytesNotSyncRange) {
-      uint64_t offset_sync_to = filesize_ - kBytesNotSyncRange;
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    if (cur_size > kBytesNotSyncRange) {
+      uint64_t offset_sync_to = cur_size - kBytesNotSyncRange;
       offset_sync_to -= offset_sync_to % kBytesAlignWhenSync;
       assert(offset_sync_to >= last_sync_size_);
       if (offset_sync_to > 0 &&
@@ -425,17 +442,22 @@ IOStatus WritableFileWriter::SyncInternal(bool use_fsync) {
   IOSTATS_TIMER_GUARD(fsync_nanos);
   TEST_SYNC_POINT("WritableFileWriter::SyncInternal:0");
   auto prev_perf_level = GetPerfLevel();
+
   IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
+
 #ifndef ROCKSDB_LITE
   FileOperationInfo::StartTimePoint start_ts;
   if (ShouldNotifyListeners()) {
     start_ts = FileOperationInfo::StartNow();
   }
 #endif
+
+  IOOptions io_options;
+  io_options.rate_limiter_priority = writable_file_->GetIOPriority();
   if (use_fsync) {
-    s = writable_file_->Fsync(IOOptions(), nullptr);
+    s = writable_file_->Fsync(io_options, nullptr);
   } else {
-    s = writable_file_->Sync(IOOptions(), nullptr);
+    s = writable_file_->Sync(io_options, nullptr);
   }
 #ifndef ROCKSDB_LITE
   if (ShouldNotifyListeners()) {
@@ -463,7 +485,9 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
     start_ts = FileOperationInfo::StartNow();
   }
 #endif
-  IOStatus s = writable_file_->RangeSync(offset, nbytes, IOOptions(), nullptr);
+  IOOptions io_options;
+  io_options.rate_limiter_priority = writable_file_->GetIOPriority();
+  IOStatus s = writable_file_->RangeSync(offset, nbytes, io_options, nullptr);
 #ifndef ROCKSDB_LITE
   if (ShouldNotifyListeners()) {
     auto finish_ts = std::chrono::steady_clock::now();
@@ -479,22 +503,27 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
 
 // This method writes to disk the specified data and makes use of the rate
 // limiter if available
-IOStatus WritableFileWriter::WriteBuffered(const char* data, size_t size) {
+IOStatus WritableFileWriter::WriteBuffered(
+    const char* data, size_t size, Env::IOPriority op_rate_limiter_priority) {
   IOStatus s;
   assert(!use_direct_io());
   const char* src = data;
   size_t left = size;
   DataVerificationInfo v_info;
   char checksum_buf[sizeof(uint32_t)];
+  Env::IOPriority rate_limiter_priority_used =
+      WritableFileWriter::DecideRateLimiterPriority(
+          writable_file_->GetIOPriority(), op_rate_limiter_priority);
+  IOOptions io_options;
+  io_options.rate_limiter_priority = rate_limiter_priority_used;
 
   while (left > 0) {
-    size_t allowed;
-    if (rate_limiter_ != nullptr) {
-      allowed = rate_limiter_->RequestToken(
-          left, 0 /* alignment */, writable_file_->GetIOPriority(), stats_,
-          RateLimiter::OpType::kWrite);
-    } else {
-      allowed = left;
+    size_t allowed = left;
+    if (rate_limiter_ != nullptr &&
+        rate_limiter_priority_used != Env::IO_TOTAL) {
+      allowed = rate_limiter_->RequestToken(left, 0 /* alignment */,
+                                            rate_limiter_priority_used, stats_,
+                                            RateLimiter::OpType::kWrite);
     }
 
     {
@@ -503,7 +532,7 @@ IOStatus WritableFileWriter::WriteBuffered(const char* data, size_t size) {
 
 #ifndef ROCKSDB_LITE
       FileOperationInfo::StartTimePoint start_ts;
-      uint64_t old_size = writable_file_->GetFileSize(IOOptions(), nullptr);
+      uint64_t old_size = writable_file_->GetFileSize(io_options, nullptr);
       if (ShouldNotifyListeners()) {
         start_ts = FileOperationInfo::StartNow();
         old_size = next_write_offset_;
@@ -516,10 +545,10 @@ IOStatus WritableFileWriter::WriteBuffered(const char* data, size_t size) {
         if (perform_data_verification_) {
           Crc32cHandoffChecksumCalculation(src, allowed, checksum_buf);
           v_info.checksum = Slice(checksum_buf, sizeof(uint32_t));
-          s = writable_file_->Append(Slice(src, allowed), IOOptions(), v_info,
+          s = writable_file_->Append(Slice(src, allowed), io_options, v_info,
                                      nullptr);
         } else {
-          s = writable_file_->Append(Slice(src, allowed), IOOptions(), nullptr);
+          s = writable_file_->Append(Slice(src, allowed), io_options, nullptr);
         }
         if (!s.ok()) {
           // If writable_file_->Append() failed, then the data may or may not
@@ -556,14 +585,16 @@ IOStatus WritableFileWriter::WriteBuffered(const char* data, size_t size) {
 
     left -= allowed;
     src += allowed;
+    uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+    flushed_size_.store(cur_size + allowed, std::memory_order_release);
   }
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
   return s;
 }
 
-IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
-                                                       size_t size) {
+IOStatus WritableFileWriter::WriteBufferedWithChecksum(
+    const char* data, size_t size, Env::IOPriority op_rate_limiter_priority) {
   IOStatus s;
   assert(!use_direct_io());
   assert(perform_data_verification_ && buffered_data_with_checksum_);
@@ -571,18 +602,22 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
   size_t left = size;
   DataVerificationInfo v_info;
   char checksum_buf[sizeof(uint32_t)];
-
+  Env::IOPriority rate_limiter_priority_used =
+      WritableFileWriter::DecideRateLimiterPriority(
+          writable_file_->GetIOPriority(), op_rate_limiter_priority);
+  IOOptions io_options;
+  io_options.rate_limiter_priority = rate_limiter_priority_used;
   // Check how much is allowed. Here, we loop until the rate limiter allows to
   // write the entire buffer.
   // TODO: need to be improved since it sort of defeats the purpose of the rate
   // limiter
   size_t data_size = left;
-  if (rate_limiter_ != nullptr) {
+  if (rate_limiter_ != nullptr && rate_limiter_priority_used != Env::IO_TOTAL) {
     while (data_size > 0) {
       size_t tmp_size;
-      tmp_size = rate_limiter_->RequestToken(
-          data_size, buf_.Alignment(), writable_file_->GetIOPriority(), stats_,
-          RateLimiter::OpType::kWrite);
+      tmp_size = rate_limiter_->RequestToken(data_size, buf_.Alignment(),
+                                             rate_limiter_priority_used, stats_,
+                                             RateLimiter::OpType::kWrite);
       data_size -= tmp_size;
     }
   }
@@ -593,7 +628,7 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
 
 #ifndef ROCKSDB_LITE
     FileOperationInfo::StartTimePoint start_ts;
-    uint64_t old_size = writable_file_->GetFileSize(IOOptions(), nullptr);
+    uint64_t old_size = writable_file_->GetFileSize(io_options, nullptr);
     if (ShouldNotifyListeners()) {
       start_ts = FileOperationInfo::StartNow();
       old_size = next_write_offset_;
@@ -606,8 +641,7 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
 
       EncodeFixed32(checksum_buf, buffered_data_crc32c_checksum_);
       v_info.checksum = Slice(checksum_buf, sizeof(uint32_t));
-      s = writable_file_->Append(Slice(src, left), IOOptions(), v_info,
-                                 nullptr);
+      s = writable_file_->Append(Slice(src, left), io_options, v_info, nullptr);
       SetPerfLevel(prev_perf_level);
     }
 #ifndef ROCKSDB_LITE
@@ -643,6 +677,8 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(const char* data,
   // the corresponding checksum value
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
+  uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+  flushed_size_.store(cur_size + left, std::memory_order_release);
   return s;
 }
 
@@ -674,7 +710,8 @@ void WritableFileWriter::Crc32cHandoffChecksumCalculation(const char* data,
 // only write on aligned
 // offsets.
 #ifndef ROCKSDB_LITE
-IOStatus WritableFileWriter::WriteDirect() {
+IOStatus WritableFileWriter::WriteDirect(
+    Env::IOPriority op_rate_limiter_priority) {
   assert(use_direct_io());
   IOStatus s;
   const size_t alignment = buf_.Alignment();
@@ -697,16 +734,20 @@ IOStatus WritableFileWriter::WriteDirect() {
   size_t left = buf_.CurrentSize();
   DataVerificationInfo v_info;
   char checksum_buf[sizeof(uint32_t)];
+  Env::IOPriority rate_limiter_priority_used =
+      WritableFileWriter::DecideRateLimiterPriority(
+          writable_file_->GetIOPriority(), op_rate_limiter_priority);
+  IOOptions io_options;
+  io_options.rate_limiter_priority = rate_limiter_priority_used;
 
   while (left > 0) {
     // Check how much is allowed
-    size_t size;
-    if (rate_limiter_ != nullptr) {
+    size_t size = left;
+    if (rate_limiter_ != nullptr &&
+        rate_limiter_priority_used != Env::IO_TOTAL) {
       size = rate_limiter_->RequestToken(left, buf_.Alignment(),
-                                         writable_file_->GetIOPriority(),
-                                         stats_, RateLimiter::OpType::kWrite);
-    } else {
-      size = left;
+                                         rate_limiter_priority_used, stats_,
+                                         RateLimiter::OpType::kWrite);
     }
 
     {
@@ -721,10 +762,10 @@ IOStatus WritableFileWriter::WriteDirect() {
         Crc32cHandoffChecksumCalculation(src, size, checksum_buf);
         v_info.checksum = Slice(checksum_buf, sizeof(uint32_t));
         s = writable_file_->PositionedAppend(Slice(src, size), write_offset,
-                                             IOOptions(), v_info, nullptr);
+                                             io_options, v_info, nullptr);
       } else {
         s = writable_file_->PositionedAppend(Slice(src, size), write_offset,
-                                             IOOptions(), nullptr);
+                                             io_options, nullptr);
       }
 
       if (ShouldNotifyListeners()) {
@@ -745,6 +786,8 @@ IOStatus WritableFileWriter::WriteDirect() {
     left -= size;
     src += size;
     write_offset += size;
+    uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+    flushed_size_.store(cur_size + size, std::memory_order_release);
     assert((next_write_offset_ % alignment) == 0);
   }
 
@@ -762,7 +805,8 @@ IOStatus WritableFileWriter::WriteDirect() {
   return s;
 }
 
-IOStatus WritableFileWriter::WriteDirectWithChecksum() {
+IOStatus WritableFileWriter::WriteDirectWithChecksum(
+    Env::IOPriority op_rate_limiter_priority) {
   assert(use_direct_io());
   assert(perform_data_verification_ && buffered_data_with_checksum_);
   IOStatus s;
@@ -793,17 +837,22 @@ IOStatus WritableFileWriter::WriteDirectWithChecksum() {
   DataVerificationInfo v_info;
   char checksum_buf[sizeof(uint32_t)];
 
+  Env::IOPriority rate_limiter_priority_used =
+      WritableFileWriter::DecideRateLimiterPriority(
+          writable_file_->GetIOPriority(), op_rate_limiter_priority);
+  IOOptions io_options;
+  io_options.rate_limiter_priority = rate_limiter_priority_used;
   // Check how much is allowed. Here, we loop until the rate limiter allows to
   // write the entire buffer.
   // TODO: need to be improved since it sort of defeats the purpose of the rate
   // limiter
   size_t data_size = left;
-  if (rate_limiter_ != nullptr) {
+  if (rate_limiter_ != nullptr && rate_limiter_priority_used != Env::IO_TOTAL) {
     while (data_size > 0) {
       size_t size;
       size = rate_limiter_->RequestToken(data_size, buf_.Alignment(),
-                                         writable_file_->GetIOPriority(),
-                                         stats_, RateLimiter::OpType::kWrite);
+                                         rate_limiter_priority_used, stats_,
+                                         RateLimiter::OpType::kWrite);
       data_size -= size;
     }
   }
@@ -819,7 +868,7 @@ IOStatus WritableFileWriter::WriteDirectWithChecksum() {
     EncodeFixed32(checksum_buf, buffered_data_crc32c_checksum_);
     v_info.checksum = Slice(checksum_buf, sizeof(uint32_t));
     s = writable_file_->PositionedAppend(Slice(src, left), write_offset,
-                                         IOOptions(), v_info, nullptr);
+                                         io_options, v_info, nullptr);
 
     if (ShouldNotifyListeners()) {
       auto finish_ts = std::chrono::steady_clock::now();
@@ -841,6 +890,8 @@ IOStatus WritableFileWriter::WriteDirectWithChecksum() {
 
   IOSTATS_ADD(bytes_written, left);
   assert((next_write_offset_ % alignment) == 0);
+  uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
+  flushed_size_.store(cur_size + left, std::memory_order_release);
 
   if (s.ok()) {
     // Move the tail to the beginning of the buffer
@@ -860,4 +911,19 @@ IOStatus WritableFileWriter::WriteDirectWithChecksum() {
   return s;
 }
 #endif  // !ROCKSDB_LITE
+Env::IOPriority WritableFileWriter::DecideRateLimiterPriority(
+    Env::IOPriority writable_file_io_priority,
+    Env::IOPriority op_rate_limiter_priority) {
+  if (writable_file_io_priority == Env::IO_TOTAL &&
+      op_rate_limiter_priority == Env::IO_TOTAL) {
+    return Env::IO_TOTAL;
+  } else if (writable_file_io_priority == Env::IO_TOTAL) {
+    return op_rate_limiter_priority;
+  } else if (op_rate_limiter_priority == Env::IO_TOTAL) {
+    return writable_file_io_priority;
+  } else {
+    return op_rate_limiter_priority;
+  }
+}
+
 }  // namespace ROCKSDB_NAMESPACE
