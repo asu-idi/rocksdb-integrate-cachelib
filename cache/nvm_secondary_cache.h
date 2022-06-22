@@ -26,7 +26,7 @@ using namespace facebook::cachelib;
 using CacheT = CacheAllocator<LruCacheTrait>;
 using CacheConfig = typename CacheT::Config;
 using CacheKey = typename CacheT::Key;
-using ItemHandle = typename CacheT::ItemHandle;
+using ItemHandle = typename CacheT::ReadHandle;
 using NvmCacheT = NvmCache<CacheT>;
 using NvmCacheConfig = typename NvmCacheT::Config;
 using NavyConfig = navy::NavyConfig;
@@ -66,7 +66,7 @@ class NVMSecondaryCache : public SecondaryCache {
 
     NVMSecondaryCache();
 
-    NVMSecondaryCache(const NVMSecondaryCacheOptions& options);
+    NVMSecondaryCache(const NVMSecondaryCacheOptions& opts);
 
     virtual ~NVMSecondaryCache() override;
 
@@ -94,7 +94,7 @@ class NVMSecondaryCache : public SecondaryCache {
     CacheConfig config_;
     NvmCacheConfig nvmConfig_;
     NavyConfig navyConfig_;
-    cachelib::PoolId defaultPool_;
+    PoolId defaultPool_;
     // CacheT& cache_;
     // NVMSecondaryCacheOptions nvmSecondaryConfig_{};
     // std::unique_ptr<NvmCacheT> nvmCache_;
