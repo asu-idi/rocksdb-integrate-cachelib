@@ -40,7 +40,7 @@ NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
     config_.enableNvmCache(nvmConfig_);
     cache_.reset();
     cache_ = std::make_unique<CacheT>(config_);
-    defaultPool_ = cache_.addPool("default", cache_.getCacheMemoryStats().cacheSize);
+    defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
 }
 
 
@@ -48,7 +48,8 @@ NVMSecondaryCache::~NVMSecondaryCache() { }
 
 
 std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
-    const Slice& key, const Cache::CreateCallback& create_cb, bool /*wait*/) {
+      const Slice& key, const Cache::CreateCallback& create_cb, bool wait,
+      bool& is_in_sec_cache){
     std::unique_ptr<SecondaryCacheResultHandle> handle;
     if(key.empty()){
         return handle;
@@ -63,7 +64,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         void* value = nullptr;
         size_t charge = 0;
         Status s;
-        char* ptr = reinterpret_cast<char*>(nvm_handle->getMemory());
+        char* ptr = reinterpret_cast<char*>(reinterpret_cast<const char*>(nvm_handle->getMemory()));
         size_t size = DecodeFixed64(ptr);
         ptr += sizeof(uint64_t);
         s = create_cb(ptr, size, &value, &charge);
@@ -94,9 +95,9 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     // convert Slice to folly::StringPiece(std::string)
     key_.append(key.data(),key.size());
     // auto handle = cache_->allocate(defaultPool_, key_, size);
-    auto handle = cache_->allocate(defaultPool_, key_, value.size());
+    auto handle = cache_->allocate(defaultPool_, key_, size);
     if(handle) {
-        std::memcpy(handle->getMemory(), value.data(), value.size());
+        std::memcpy(handle->getMemory(), value, size);
         cache_->insertOrReplace(handle);
         return Status::OK();
     }

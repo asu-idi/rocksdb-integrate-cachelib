@@ -25,7 +25,6 @@ namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
 using CacheT = CacheAllocator<LruCacheTrait>;
 using CacheConfig = typename CacheT::Config;
-using CacheKey = typename CacheT::Key;
 using ItemHandle = typename CacheT::ReadHandle;
 using NvmCacheT = NvmCache<CacheT>;
 using NvmCacheConfig = typename NvmCacheT::Config;
@@ -64,8 +63,6 @@ class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
 class NVMSecondaryCache : public SecondaryCache {
     public:
 
-    NVMSecondaryCache();
-
     NVMSecondaryCache(const NVMSecondaryCacheOptions& opts);
 
     virtual ~NVMSecondaryCache() override;
@@ -76,8 +73,8 @@ class NVMSecondaryCache : public SecondaryCache {
                 const Cache::CacheItemHelper* helper) override;
 
     std::unique_ptr<SecondaryCacheResultHandle> Lookup(
-      const Slice& key, const Cache::CreateCallback& create_cb,
-      bool /*wait*/) override;
+      const Slice& key, const Cache::CreateCallback& create_cb, bool wait,
+      bool& is_in_sec_cache) override;
 
     void Erase(const Slice& key) override;
 
