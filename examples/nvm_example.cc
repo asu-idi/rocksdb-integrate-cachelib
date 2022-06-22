@@ -33,7 +33,7 @@ using ROCKSDB_NAMESPACE::Slice;
 using ROCKSDB_NAMESPACE::RateLimiter;
 using ROCKSDB_NAMESPACE::LRUCacheOptions;
 using ROCKSDB_NAMESPACE::Cache;
-using ROCKSDB_NAMESPACE::SecondaryCache;
+using ROCKSDB_NAMESPACE::SecondaryCache;                            
 using ROCKSDB_NAMESPACE::CacheTier;
 using ROCKSDB_NAMESPACE::FlushOptions;
 using ROCKSDB_NAMESPACE::NVMSecondaryCacheOptions;

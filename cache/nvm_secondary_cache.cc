@@ -11,24 +11,41 @@
 #include "util/compression.h"
 #include "util/string_util.h"
 
-#include <cachelib/allocator/CacheAllocator.h>
 
 namespace ROCKSDB_NAMESPACE {
 
-// // NVMSecondaryCache::NVMSecondaryCache(const ItemDestructor& itemDestructor, 
-// //         NvmCacheConfig config, CacheT& cache, bool truncate)
-// //         :nvmConfig_(config), cache_(cache),itemDestructor_(itemDestructor) {
-// //     nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmConfig_, truncate, itemDestructor_);
-// // }
+NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& options) {
+    config_.setCacheSize(1 * 1024 * 1024 ) // 1 MB
+        .setCacheName("My cache") 
+        .setAccessConfig({25, 10});
 
-NVMSecondaryCache::NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig)
-        :cache_(cache),nvmSecondaryConfig_(options){
-    nvmCache_ = std::make_unique<NvmCacheT>(cache_, nvmconfig, false, nullptr);
+    navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
+    navyConfig_.setDeviceMetadataSize(opts.deviceMetadataSize);
+    navyConfig_.setBlockSize(opts.blockSize);
+    navyConfig_.setNavyReqOrderingShards(opts.navyReqOrderingShards);
+
+    navyConfig_.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
+
+    navyConfig_.enableRandomAdmPolicy()
+        .setAdmProbability(opts.admProbability);
+
+    navyConfig_.blockCache().setRegionSize(opts.regionSize);
+
+    navyConfig_.bigHash()
+        .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
+        .setBucketSize(opts.bigHashBucketSize)
+        .setBucketBfSize(opts.bigHashBucketBfSize);
+
+    nvmConfig_.navyConfig = navyConfig_;
+    config_.enableNvmCache(nvmConfig_);
+    std::unique_ptr<facebook::cachelib::LruAllocator>cache_;
+    cache_.reset();
+    cache_ = std::make_unique<facebook::cachelib::LruAllocator>(config_);
     defaultPool_ = cache_.addPool("default", cache_.getCacheMemoryStats().cacheSize);
 }
 
 
-NVMSecondaryCache::~NVMSecondaryCache() { nvmCache_.reset(); }
+NVMSecondaryCache::~NVMSecondaryCache() { }
 
 
 std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
@@ -42,7 +59,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
     std::string key_;
     key_.append(key.data(),key.size());
     // return cachelib handle
-    ItemHandle nvm_handle = nvmCache_->find(key_);
+    ItemHandle nvm_handle = cache_->find(key_);
     if(nvm_handle) {
         void* value = nullptr;
         size_t charge = 0;
@@ -78,9 +95,10 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     // convert Slice to folly::StringPiece(std::string)
     key_.append(key.data(),key.size());
     // auto handle = cache_->allocate(defaultPool_, key_, size);
-    auto handle = CacheAPIWrapperForNvm<CacheT>::findInternal(cache_, key_);
+    auto handle = cache_->allocate(defaultPool_, key_, value.size());
     if(handle) {
-        nvmCache_->put(handle, nvmCache_->createPutToken(key_));
+        std::memcpy(handle->getMemory(), value.data(), value.size());
+        cache_->insertOrReplace(handle);
         return Status::OK();
     }
     return Status::NotFound();
@@ -93,7 +111,7 @@ void NVMSecondaryCache::Erase(const Slice& key) {
     // convert Slice to folly::StringPiece(std::string)
     std::string key_;
     key_.append(key.data(),key.size());
-    nvmCache_->remove(key_,nvmCache_->createDeleteTombStone(key_));
+    auto res = cache_->remove(key_);
     return;
 }
 
@@ -126,36 +144,7 @@ std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
 }
 
 std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
-    facebook::cachelib::LruAllocator::Config _config;
-
-    _config.setCacheSize(1 * 1024 * 1024 ) // 1 MB
-        .setCacheName("My cache") // unique identifier for the cache
-        .setAccessConfig({25, 10});
-
-    facebook::cachelib::LruAllocator::NvmCacheConfig nvmConfig;
-
-    nvmConfig.navyConfig.setSimpleFile(opts.fileName, opts.fileSize);
-    nvmConfig.navyConfig.setDeviceMetadataSize(opts.deviceMetadataSize);
-    nvmConfig.navyConfig.setBlockSize(opts.blockSize);
-    nvmConfig.navyConfig.setNavyReqOrderingShards(opts.navyReqOrderingShards);
-
-    nvmConfig.navyConfig.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
-
-    nvmConfig.navyConfig.enableRandomAdmPolicy()
-        .setAdmProbability(opts.admProbability);
-
-    nvmConfig.navyConfig.blockCache().setRegionSize(opts.regionSize);
-
-    nvmConfig.navyConfig.bigHash()
-        .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
-        .setBucketSize(opts.bigHashBucketSize)
-        .setBucketBfSize(opts.bigHashBucketBfSize);
-
-    _config.enableNvmCache(nvmConfig);
-    std::unique_ptr<facebook::cachelib::LruAllocator>cache_;
-    cache_.reset();
-    cache_ = std::make_unique<facebook::cachelib::LruAllocator>(_config);
-    return std::make_shared<NVMSecondaryCache>(*cache_,opts,nvmConfig);
+    return std::make_shared<NVMSecondaryCache>(opts);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

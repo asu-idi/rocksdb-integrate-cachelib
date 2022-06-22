@@ -23,10 +23,13 @@
 
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
-using CacheT = CacheAllocator<LruCacheTrait>;
-using NvmCacheT = NvmCache<CacheT>;
+using Cache = cachelib::LruAllocator; 
+using CacheConfig = typename Cache::Config;
+using CacheKey = typename Cache::Key;
+using ItemHandle = typename Cache::ItemHandle;
+using NvmCacheT = NvmCache<Cache>;
 using NvmCacheConfig = typename NvmCacheT::Config;
-using ItemHandle = typename CacheT::ItemHandle;
+using NavyConfig = navy::NavyConfig;
 
 // NVM SecondaryCacheResultHandle catch the cachelib Itemhandle and convert it 
 // to rocksdb's handle
@@ -63,7 +66,7 @@ class NVMSecondaryCache : public SecondaryCache {
 
     NVMSecondaryCache();
 
-    NVMSecondaryCache(CacheT& cache, const NVMSecondaryCacheOptions& options, NvmCacheConfig nvmconfig);
+    NVMSecondaryCache(const NVMSecondaryCacheOptions& options);
 
     virtual ~NVMSecondaryCache() override;
 
@@ -87,13 +90,16 @@ class NVMSecondaryCache : public SecondaryCache {
 //   uint32_t num_lookups() { return num_lookups_; }
 
     private:
+    std::unique_ptr<Cache> cache_;
+    CacheConfig config_;
+    NvmCacheConfig nvmConfig_;
+    NavyConfig navyConfig_;
+    cachelib::PoolId defaultPool_;
+    // CacheT& cache_;
+    // NVMSecondaryCacheOptions nvmSecondaryConfig_{};
+    // std::unique_ptr<NvmCacheT> nvmCache_;
+    // PoolId defaultPool_;
 
-    CacheT& cache_;
-    NVMSecondaryCacheOptions nvmSecondaryConfig_{};
-    std::unique_ptr<NvmCacheT> nvmCache_;
-    PoolId defaultPool_;
-//   std::shared_ptr<Cache> cache_;
-//   LRUSecondaryCacheOptions cache_options_;
 //   uint32_t num_inserts_;
 //   uint32_t num_lookups_;
 };
