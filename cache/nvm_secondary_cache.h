@@ -23,11 +23,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 using namespace facebook::cachelib;
-using Cache = cachelib::LruAllocator; 
-using CacheConfig = typename Cache::Config;
-using CacheKey = typename Cache::Key;
-using ItemHandle = typename Cache::ItemHandle;
-using NvmCacheT = NvmCache<Cache>;
+using CacheT = CacheAllocator<LruCacheTrait>;
+using CacheConfig = typename CacheT::Config;
+using CacheKey = typename CacheT::Key;
+using ItemHandle = typename CacheT::ItemHandle;
+using NvmCacheT = NvmCache<CacheT>;
 using NvmCacheConfig = typename NvmCacheT::Config;
 using NavyConfig = navy::NavyConfig;
 
@@ -90,7 +90,7 @@ class NVMSecondaryCache : public SecondaryCache {
 //   uint32_t num_lookups() { return num_lookups_; }
 
     private:
-    std::unique_ptr<Cache> cache_;
+    std::unique_ptr<CacheT> cache_;
     CacheConfig config_;
     NvmCacheConfig nvmConfig_;
     NavyConfig navyConfig_;
