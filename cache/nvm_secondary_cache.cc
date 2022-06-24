@@ -17,24 +17,30 @@ namespace ROCKSDB_NAMESPACE {
 NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
     config_.setCacheSize(1 * 1024 * 1024 ) // 1 MB
         .setCacheName("My cache") 
-        .setAccessConfig({25, 10});
+        .setAccessConfig({25, 10})
+        .validate();
 
+    // navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
+    // navyConfig_.setDeviceMetadataSize(opts.deviceMetadataSize);
+    // navyConfig_.setBlockSize(opts.blockSize);
+    // navyConfig_.setNavyReqOrderingShards(opts.navyReqOrderingShards);
+
+    // navyConfig_.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
+
+    // navyConfig_.enableRandomAdmPolicy()
+    //     .setAdmProbability(opts.admProbability);
+
+    // navyConfig_.blockCache().setRegionSize(opts.regionSize);
+
+    // navyConfig_.bigHash()
+    //     .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
+    //     .setBucketSize(opts.bigHashBucketSize)
+    //     .setBucketBfSize(opts.bigHashBucketBfSize);
+
+    navyConfig_.setBlockSize(4096);
     navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
-    navyConfig_.setDeviceMetadataSize(opts.deviceMetadataSize);
-    navyConfig_.setBlockSize(opts.blockSize);
-    navyConfig_.setNavyReqOrderingShards(opts.navyReqOrderingShards);
+    navyConfig_.blockCache().setRegionSize(16 * 1024 * 1024);
 
-    navyConfig_.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
-
-    navyConfig_.enableRandomAdmPolicy()
-        .setAdmProbability(opts.admProbability);
-
-    navyConfig_.blockCache().setRegionSize(opts.regionSize);
-
-    navyConfig_.bigHash()
-        .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
-        .setBucketSize(opts.bigHashBucketSize)
-        .setBucketBfSize(opts.bigHashBucketBfSize);
 
     nvmConfig_.navyConfig = navyConfig_;
     config_.enableNvmCache(nvmConfig_);
@@ -64,7 +70,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         void* value = nullptr;
         size_t charge = 0;
         Status s;
-        char* ptr = reinterpret_cast<char*>(reinterpret_cast<const char*>(nvm_handle->getMemory()));
+        char* ptr = const_cast<char*>(reinterpret_cast<const char*>(nvm_handle->getMemory()));
         size_t size = DecodeFixed64(ptr);
         ptr += sizeof(uint64_t);
         s = create_cb(ptr, size, &value, &charge);
