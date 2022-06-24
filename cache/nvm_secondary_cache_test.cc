@@ -134,7 +134,7 @@ class NVMSecondaryCacheTest : public testing::Test {
 
   void BasicTest() {
     NVMSecondaryCacheOptions opts;
-    opts.fileName="/temp/sc";
+    opts.fileName="/cachelib/sc";
 
     std::shared_ptr<SecondaryCache> sec_cache =
         NewNVMSecondaryCache(opts);
@@ -142,6 +142,7 @@ class NVMSecondaryCacheTest : public testing::Test {
 
   void FailsTest() {
     NVMSecondaryCacheOptions opts;
+    opts.fileName="/cachelib/sc";
     std::shared_ptr<SecondaryCache> sec_cache =
         NewNVMSecondaryCache(opts);
 

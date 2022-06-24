@@ -190,7 +190,7 @@ struct NVMSecondaryCacheOptions {
   uint32_t regionSize = 4 * 1024 * 1024;
   /*Big Hash*/
   unsigned int sizePct = 50;
-  uint64_t smallItemMaxSize = 1024;
+  uint64_t smallItemMaxSize = 200;
   uint32_t bigHashBucketSize = 1024;
   uint64_t bigHashBucketBfSize = 8;
 
@@ -207,7 +207,7 @@ struct NVMSecondaryCacheOptions {
     /*Block Cache*/
     uint32_t _regionSize = 4 * 1024 * 1024,
     /*Big Hash*/
-    unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 1024, 
+    unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 200, 
     uint32_t _bigHashBucketSize = 1024, uint64_t _bigHashBucketBfSize = 8)
     : fileName(_fileName), fileSize(_fileSize), deviceMetadataSize(_deviceMetadataSize),
       blockSize(_blockSize), navyReqOrderingShards(_navyReqOrderingShards), readerThreads(_readerThreads),
@@ -229,7 +229,7 @@ extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
   /*Block Cache*/
   uint32_t _regionSize = 4 * 1024 * 1024,
   /*Big Hash*/
-  unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 1024, 
+  unsigned int _sizePct = 50, uint64_t _smallItemMaxSize = 200, 
   uint32_t _bigHashBucketSize = 1024, uint64_t _bigHashBucketBfSize = 8);
 
 extern std::shared_ptr<SecondaryCache> NewNVMSecondaryCache(
