@@ -15,31 +15,31 @@
 namespace ROCKSDB_NAMESPACE {
 
 NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
-    config_.setCacheSize(1 * 1024 * 1024 ) // 1 MB
+    config_.setCacheSize(1 * 1024 * 1024 *1024) // 1 MB
         .setCacheName("My cache") 
         .setAccessConfig({25, 10})
         .validate();
 
-    // navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
-    // navyConfig_.setDeviceMetadataSize(opts.deviceMetadataSize);
-    // navyConfig_.setBlockSize(opts.blockSize);
-    // navyConfig_.setNavyReqOrderingShards(opts.navyReqOrderingShards);
-
-    // navyConfig_.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
-
-    // navyConfig_.enableRandomAdmPolicy()
-    //     .setAdmProbability(opts.admProbability);
-
-    // navyConfig_.blockCache().setRegionSize(opts.regionSize);
-
-    // navyConfig_.bigHash()
-    //     .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
-    //     .setBucketSize(opts.bigHashBucketSize)
-    //     .setBucketBfSize(opts.bigHashBucketBfSize);
-
-    navyConfig_.setBlockSize(4096);
     navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
-    navyConfig_.blockCache().setRegionSize(16 * 1024 * 1024);
+    navyConfig_.setDeviceMetadataSize(opts.deviceMetadataSize);
+    navyConfig_.setBlockSize(opts.blockSize);
+    navyConfig_.setNavyReqOrderingShards(opts.navyReqOrderingShards);
+
+    navyConfig_.setReaderAndWriterThreads(opts.readerThreads, opts.writerThreads);
+
+    navyConfig_.enableRandomAdmPolicy()
+        .setAdmProbability(opts.admProbability);
+
+    navyConfig_.blockCache().setRegionSize(opts.regionSize);
+
+    navyConfig_.bigHash()
+        .setSizePctAndMaxItemSize(opts.sizePct, opts.smallItemMaxSize)
+        .setBucketSize(opts.bigHashBucketSize)
+        .setBucketBfSize(opts.bigHashBucketBfSize);
+
+    // navyConfig_.setBlockSize(4096);
+    // navyConfig_.setSimpleFile(opts.fileName, opts.fileSize);
+    // navyConfig_.blockCache().setRegionSize(16 * 1024 * 1024);
 
 
     nvmConfig_.navyConfig = navyConfig_;
