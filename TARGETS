@@ -15,6 +15,7 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
         "cache/cache_reservation_manager.cc",
         "cache/clock_cache.cc",
         "cache/compressed_secondary_cache.cc",
+        "cache/nvm_secondary_cache.cc",
         "cache/fast_lru_cache.cc",
         "cache/lru_cache.cc",
         "cache/sharded_cache.cc",
@@ -345,6 +346,7 @@ cpp_library_wrapper(name="rocksdb_whole_archive_lib", srcs=[
         "cache/cache_reservation_manager.cc",
         "cache/clock_cache.cc",
         "cache/compressed_secondary_cache.cc",
+        "cache/nvm_secondary_cache.cc",
         "cache/fast_lru_cache.cc",
         "cache/lru_cache.cc",
         "cache/sharded_cache.cc",
@@ -4969,6 +4971,10 @@ cpp_unittest_wrapper(name="compressed_secondary_cache_test",
             deps=[":rocksdb_test_lib"],
             extra_compiler_flags=[])
 
+cpp_unittest_wrapper(name="nvm_secondary_cache_test",
+            srcs=["cache/nvm_secondary_cache_test.cc"],
+            deps=[":rocksdb_test_lib"],
+            extra_compiler_flags=[])
 
 cpp_unittest_wrapper(name="configurable_test",
             srcs=["options/configurable_test.cc"],
