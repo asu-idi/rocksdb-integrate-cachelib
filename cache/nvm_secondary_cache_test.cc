@@ -204,18 +204,18 @@ TEST_F(NVMSecondaryCacheTest, BasicTest) {
   BasicTest();
 }
 
-// #ifndef ROCKSDB_LITE
+#ifndef ROCKSDB_LITE
 
-// TEST_F(NVMSecondaryCacheTest, BasicTestFromStringWithNoCompression) {
-//   std::string sec_cache_uri =
-//       "NVM_secondary_cache://"
-//       "capacity=2048;num_shard_bits=0;compression_type=kNoCompression";
-//   std::shared_ptr<SecondaryCache> sec_cache;
-//   Status s = SecondaryCache::CreateFromString(ConfigOptions(), sec_cache_uri,
-//                                               &sec_cache);
-//   EXPECT_OK(s);
-//   BasicTestHelper(sec_cache);
-// }
+TEST_F(NVMSecondaryCacheTest, BasicTestFromString) {
+  std::string sec_cache_uri =
+      "NVM_secondary_cache://"
+      "filename=\"/cachelib/sc\";";
+  std::shared_ptr<SecondaryCache> sec_cache;
+  Status s = SecondaryCache::CreateFromString(ConfigOptions(), sec_cache_uri,
+                                              &sec_cache);
+  EXPECT_OK(s);
+  BasicTestHelper(sec_cache);
+}
 
 // TEST_F(NVMSecondaryCacheTest, BasicTestFromStringWithCompression) {
 //   std::string sec_cache_uri;
@@ -238,11 +238,11 @@ TEST_F(NVMSecondaryCacheTest, BasicTest) {
 //   BasicTestHelper(sec_cache);
 // }
 
-// #endif  // ROCKSDB_LITE
+#endif  // ROCKSDB_LITE
 
-TEST_F(NVMSecondaryCacheTest, FailsTest) {
-  FailsTest();
-}
+// TEST_F(NVMSecondaryCacheTest, FailsTest) {
+//   FailsTest();
+// }
 
 }  // namespace ROCKSDB_NAMESPACE
 

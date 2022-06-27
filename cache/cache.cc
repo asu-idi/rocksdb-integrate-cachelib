@@ -55,6 +55,14 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionType::kUInt32T, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
 };
+
+static std::unordered_map<std::string, OptionTypeInfo>
+    nvm_sec_cache_options_type_info = {
+        {"filename",
+         {offsetof(struct NvmSecondaryCacheOptions, fileName),
+          OptionType::kString, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+};
 #endif  // ROCKSDB_LITE
 
 Status SecondaryCache::CreateFromString(
@@ -79,6 +87,31 @@ Status SecondaryCache::CreateFromString(
     (void)config_options;
     status = Status::NotSupported(
         "Cannot load compressed secondary cache in LITE mode ", args);
+#endif  //! ROCKSDB_LITE
+
+    if (status.ok()) {
+      result->swap(sec_cache);
+    }
+    return status;
+  } else if(value.find("nvm_secondary_cache://") == 0) {
+    std::string args = value;
+    args.erase(0, std::strlen("nvm_secondary_cache://"));
+    Status status;
+    std::shared_ptr<SecondaryCache> sec_cache;
+
+#ifndef ROCKSDB_LITE
+    NVMSecondaryCacheOptions sec_cache_opts;
+    status = OptionTypeInfo::ParseStruct(config_options, "",
+                                         &nvm_sec_cache_options_type_info, "",
+                                         args, &sec_cache_opts);
+    if (status.ok()) {
+      sec_cache = NewNVMSecondaryCache(sec_cache_opts);
+    }
+
+#else
+    (void)config_options;
+    status = Status::NotSupported(
+        "Cannot load nvm secondary cache in LITE mode ", args);
 #endif  //! ROCKSDB_LITE
 
     if (status.ok()) {

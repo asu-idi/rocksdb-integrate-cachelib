@@ -602,6 +602,12 @@ DEFINE_uint32(
     "compress_format_version == 2 -- decompressed size is included"
     " in the block header in varint32 format.");
 
+DEFINE_bool(use_nvm_secondary_cache, false,
+            "Use the NVMSecondaryCache as the secondary cache.");
+
+DEFINE_string(nvm_secondary_cache_file_name, "/cachelib/sc",
+              "The path to store navy file. ");
+
 DEFINE_int64(simcache_size, -1,
              "Number of bytes to use as a simcache of "
              "uncompressed data. Nagative value disables simcache.");
