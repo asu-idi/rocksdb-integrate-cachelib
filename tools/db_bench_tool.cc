@@ -3016,6 +3016,12 @@ class Benchmark {
             NewCompressedSecondaryCache(secondary_cache_opts);
       }
 
+      if(FLAGS_use_nvm_secondary_cache) {
+        NVMSecondaryCacheOptions sec_cache_opts;
+        sec_cache_opts.fileName = FLAGS_nvm_secondary_cache_file_name;
+        opts.secondary_cache = NewNVMSecondaryCache(sec_cache_opts);
+      }
+
       return NewLRUCache(opts);
     } else {
       fprintf(stderr, "Cache type not supported.");
