@@ -15,7 +15,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
-    config_.setCacheSize(1 * 1024 * 1024 *1024) // 1 MB
+    config_.setCacheSize(1 * 1024 * 1024 * 1024) // 1 GB
         .setCacheName("My cache") 
         .setAccessConfig({25, 10})
         .validate();

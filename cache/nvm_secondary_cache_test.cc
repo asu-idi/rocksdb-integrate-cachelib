@@ -81,6 +81,13 @@ class NVMSecondaryCacheTest : public testing::Test {
 
   void SetFailCreate(bool fail) { fail_create_ = fail; }
 
+  void BasicTestHelper2(std::shared_ptr<SecondaryCache> sec_cache) {
+    bool is_in_sec_cache{true};
+    std::unique_ptr<SecondaryCacheResultHandle> handle0 =
+        sec_cache->Lookup("k0", test_item_creator, true, is_in_sec_cache);
+    ASSERT_EQ(handle0, nullptr);
+  }
+
   void BasicTestHelper(std::shared_ptr<SecondaryCache> sec_cache) {
     bool is_in_sec_cache{true};
     // Lookup an non-existent key.
@@ -208,13 +215,14 @@ TEST_F(NVMSecondaryCacheTest, BasicTest) {
 
 TEST_F(NVMSecondaryCacheTest, BasicTestFromString) {
   std::string sec_cache_uri =
-      "NVM_secondary_cache://"
-      "filename=\"/cachelib/sc\";";
+      "nvm_secondary_cache://"
+      "filename=/cachelib/sc;";
+  std::cout<<sec_cache_uri<<std::endl;
   std::shared_ptr<SecondaryCache> sec_cache;
   Status s = SecondaryCache::CreateFromString(ConfigOptions(), sec_cache_uri,
                                               &sec_cache);
   EXPECT_OK(s);
-  BasicTestHelper(sec_cache);
+  BasicTestHelper2(sec_cache);
 }
 
 // TEST_F(NVMSecondaryCacheTest, BasicTestFromStringWithCompression) {
