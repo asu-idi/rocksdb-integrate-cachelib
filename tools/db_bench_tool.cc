@@ -608,6 +608,42 @@ DEFINE_bool(use_nvm_secondary_cache, false,
 DEFINE_string(nvm_secondary_cache_file_name, "/cachelib/sc",
               "The path to store navy file. ");
 
+DEFINE_uint64(nvm_secondary_cache_file_size, 100 * 1024ULL * 1024ULL,
+              "navy file size ");
+
+DEFINE_uint64(nvm_secondary_cache_device_metadata_size, 4 * 1024 * 1024,
+              "navy deviceMetadataSize");
+
+DEFINE_uint64(nvm_secondary_cache_block_size, 1024,
+              "navy block size ");
+
+DEFINE_uint64(nvm_secondary_cache_navy_req_ordering_shards, 10,
+              "navyReqOrderingShards");
+
+DEFINE_uint(nvm_secondary_cache_reader_threads, 24,
+              "navy reader_threads");
+
+DEFINE_uint(nvm_secondary_cache_writer_threads, 24,
+              "navy writer_threads");            
+
+DEFINE_double(nvm_secondary_cache_admprobability, 0.5,
+              "navy admprobability"); 
+
+DEFINE_uint32(nvm_secondary_cache_region_size, 4 * 1024 * 1024,
+              "navy region_size");
+
+DEFINE_uint(nvm_secondary_cache_size_pct, 50,
+              "navy size_pct");
+
+DEFINE_uint64(nvm_secondary_cache_smallitem_max_size, 200,
+              "navy smallitem_max_size");
+
+DEFINE_uint32(nvm_secondary_cache_bighash_bucket_size, 1024,
+              "navy bighash_bucket_size ");
+
+DEFINE_uint64(nvm_secondary_cache_bighash_bucket_bf_size, 8,
+              "navy bighash_bucket_bf_size");
+
 DEFINE_int64(simcache_size, -1,
              "Number of bytes to use as a simcache of "
              "uncompressed data. Nagative value disables simcache.");
@@ -3019,6 +3055,18 @@ class Benchmark {
       if(FLAGS_use_nvm_secondary_cache) {
         NVMSecondaryCacheOptions sec_cache_opts;
         sec_cache_opts.fileName = FLAGS_nvm_secondary_cache_file_name;
+        sec_cache_opts.fileSize = FLAGS_nvm_secondary_cache_file_size;
+        sec_cache_opts.deviceMetadataSize = FLAGS_nvm_secondary_cache_device_metadata_size;
+        sec_cache_opts.blockSize = FLAGS_nvm_secondary_cache_block_size;
+        sec_cache_opts.navyReqOrderingShards = FLAGS_nvm_secondary_cache_navy_req_ordering_shards;
+        sec_cache_opts.readerThreads = FLAGS_nvm_secondary_cache_reader_threads;
+        sec_cache_opts.writerThreads = FLAGS_nvm_secondary_cache_writer_threads;
+        sec_cache_opts.admProbability = FLAGS_nvm_secondary_cache_admprobability;
+        sec_cache_opts.regionSize = FLAGS_nvm_secondary_cache_region_size;
+        sec_cache_opts.sizePct = FLAGS_nvm_secondary_cache_size_pct;
+        sec_cache_opts.smallItemMaxSize = FLAGS_nvm_secondary_cache_smallitem_max_size;
+        sec_cache_opts.bigHashBucketSize = FLAGS_nvm_secondary_cache_bighash_bucket_size;
+        sec_cache_opts.bigHashBucketBfSize = FLAGS_nvm_secondary_cache_bighash_bucket_bf_size;
         opts.secondary_cache = NewNVMSecondaryCache(sec_cache_opts);
       }
 
