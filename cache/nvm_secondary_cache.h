@@ -39,8 +39,7 @@ class NVMSecondaryCacheResultHandle : public SecondaryCacheResultHandle {
         : handle(hdl), value_(value), size_(size) {}
 
     ~NVMSecondaryCacheResultHandle() override {
-        //cache release the cachelib handle;
-        handle->release();
+        //auto release cachelib readhandle
     }
 
     bool IsReady() override { return handle->isReady(); }

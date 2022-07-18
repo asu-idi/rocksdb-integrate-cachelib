@@ -85,7 +85,7 @@ class NVMSecondaryCacheTest : public testing::Test {
     bool is_in_sec_cache{true};
     std::unique_ptr<SecondaryCacheResultHandle> handle0 =
         sec_cache->Lookup("k0", test_item_creator, true, is_in_sec_cache);
-    ASSERT_EQ(handle0, nullptr);
+    ASSERT_EQ(handle0, nullptr);   
   }
 
   void BasicTestHelper(std::shared_ptr<SecondaryCache> sec_cache) {
@@ -98,7 +98,8 @@ class NVMSecondaryCacheTest : public testing::Test {
     Random rnd(301);
     // Insert and Lookup the first item.
     std::string str1;
-    str1 = rnd.RandomString(1020);
+    str1 = rnd.RandomString(1000);
+    std::cout<< "str1 value: " << str1 <<std::endl;
     TestItem item1(str1.data(), str1.length());
     ASSERT_OK(sec_cache->Insert("k1", &item1,
                                 &NVMSecondaryCacheTest::helper_));
@@ -110,6 +111,7 @@ class NVMSecondaryCacheTest : public testing::Test {
 
     std::unique_ptr<TestItem> val1 =
         std::unique_ptr<TestItem>(static_cast<TestItem*>(handle1->Value()));
+    std::cout<< "handle value: " << val1->Buf() <<std::endl;
     ASSERT_NE(val1, nullptr);
     ASSERT_EQ(memcmp(val1->Buf(), item1.Buf(), item1.Size()), 0);
 

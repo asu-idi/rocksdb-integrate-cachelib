@@ -70,9 +70,13 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         void* value = nullptr;
         size_t charge = 0;
         Status s;
-        char* ptr = const_cast<char*>(reinterpret_cast<const char*>(nvm_handle->getMemory()));
-        size_t size = DecodeFixed64(ptr);
-        ptr += sizeof(uint64_t);
+        CacheAllocationPtr* ptr = const_cast<CacheAllocationPtr*>(reinterpret_cast<const CacheAllocationPtr*>(nvm_handle->getMemory()));
+        size_t size = nvm_handle->getSize();
+
+        void* str1;
+        memcpy(str1,nvm_handle->getMemory(), nvm_handle->getSize());
+        std::cout<<"nvm_handle value: "<< str1 <<std::endl;
+
         s = create_cb(ptr, size, &value, &charge);
         if(s.ok()) {
             handle.reset(new NVMSecondaryCacheResultHandle(&nvm_handle,value,charge));
@@ -86,16 +90,11 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     if(key.empty()){
         return Status::Corruption("Error with empty key.");
     }
-    size_t size;
-    char* buf;
-    Status s;
     std::string key_;
-    size = (*helper->size_cb)(value);
-    buf = new char[size + sizeof(uint64_t)];
-    EncodeFixed64(buf, size);
-    s = (*helper->saveto_cb)(value, 0, size, buf + sizeof(uint64_t));
+    size_t size = (*helper->size_cb)(value);
+    CacheAllocationPtr ptr = AllocateBlock(size, cache_options_.memory_allocator.get());
+    Status s = (*helper->saveto_cb)(value, 0, size, ptr.get());
     if (!s.ok()) {
-      delete[] buf;
       return s;
     }
     // convert Slice to folly::StringPiece(std::string)
@@ -103,7 +102,7 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     // auto handle = cache_->allocate(defaultPool_, key_, size);
     auto handle = cache_->allocate(defaultPool_, key_, size);
     if(handle) {
-        std::memcpy(handle->getMemory(), value, size);
+        std::memcpy(handle->getMemory(), ptr.get(), size);
         cache_->insertOrReplace(handle);
         return Status::OK();
     }
