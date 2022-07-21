@@ -73,7 +73,7 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         CacheAllocationPtr* ptr = const_cast<CacheAllocationPtr*>(reinterpret_cast<const CacheAllocationPtr*>(nvm_handle->getMemory()));
         size_t size = nvm_handle->getSize();
 
-        void* str1;
+        void* str1 = nullptr;
         memcpy(str1,nvm_handle->getMemory(), nvm_handle->getSize());
         std::cout<<"nvm_handle value: "<< str1 <<std::endl;
 
@@ -92,7 +92,7 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     }
     std::string key_;
     size_t size = (*helper->size_cb)(value);
-    CacheAllocationPtr ptr = AllocateBlock(size, cache_options_.memory_allocator.get());
+    CacheAllocationPtr ptr = AllocateBlock(size, nullptr);
     Status s = (*helper->saveto_cb)(value, 0, size, ptr.get());
     if (!s.ok()) {
       return s;
