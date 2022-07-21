@@ -620,10 +620,10 @@ DEFINE_uint64(nvm_secondary_cache_block_size, 1024,
 DEFINE_uint64(nvm_secondary_cache_navy_req_ordering_shards, 10,
               "navyReqOrderingShards");
 
-DEFINE_uint(nvm_secondary_cache_reader_threads, 24,
+DEFINE_uint64(nvm_secondary_cache_reader_threads, 24,
               "navy reader_threads");
 
-DEFINE_uint(nvm_secondary_cache_writer_threads, 24,
+DEFINE_uint64(nvm_secondary_cache_writer_threads, 24,
               "navy writer_threads");            
 
 DEFINE_double(nvm_secondary_cache_admprobability, 0.5,
@@ -632,7 +632,7 @@ DEFINE_double(nvm_secondary_cache_admprobability, 0.5,
 DEFINE_uint32(nvm_secondary_cache_region_size, 4 * 1024 * 1024,
               "navy region_size");
 
-DEFINE_uint(nvm_secondary_cache_size_pct, 50,
+DEFINE_uint64(nvm_secondary_cache_size_pct, 50,
               "navy size_pct");
 
 DEFINE_uint64(nvm_secondary_cache_smallitem_max_size, 200,
