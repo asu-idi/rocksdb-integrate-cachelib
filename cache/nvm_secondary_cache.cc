@@ -72,11 +72,11 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         Status s;
         CacheAllocationPtr* ptr = const_cast<CacheAllocationPtr*>(reinterpret_cast<const CacheAllocationPtr*>(nvm_handle->getMemory()));
         size_t size = nvm_handle->getSize();
-
+/*
         void* str1 = nullptr;
         memcpy(str1,nvm_handle->getMemory(), nvm_handle->getSize());
         std::cout<<"nvm_handle value: "<< str1 <<std::endl;
-
+*/
         s = create_cb(ptr, size, &value, &charge);
         if(s.ok()) {
             handle.reset(new NVMSecondaryCacheResultHandle(&nvm_handle,value,charge));
@@ -103,7 +103,7 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     auto handle = cache_->allocate(defaultPool_, key_, size);
     if(handle) {
         std::memcpy(handle->getMemory(), ptr.get(), size);
-        cache_->insertOrReplace(handle);
+	cache_->insertOrReplace(handle);
         return Status::OK();
     }
     return Status::NotFound();
