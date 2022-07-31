@@ -5708,8 +5708,8 @@ class Benchmark {
       ++i;
 
       if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
-        thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
+          i % 128 == 127) {
+        thread->shared->read_rate_limiter->Request(128, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
       }
@@ -5760,9 +5760,9 @@ class Benchmark {
       }
 
       if (thread->shared->read_rate_limiter.get() != nullptr &&
-          read % 256 == 255) {
+          read % 128 == 127) {
         thread->shared->read_rate_limiter->Request(
-            256, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
+            128, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
       }
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
@@ -5800,8 +5800,8 @@ class Benchmark {
       thread->stats.FinishedOps(nullptr, db, 1, kRead);
       ++i;
       if (thread->shared->read_rate_limiter.get() != nullptr &&
-          i % 1024 == 1023) {
-        thread->shared->read_rate_limiter->Request(1024, Env::IO_HIGH,
+          i % 128 == 127) {
+        thread->shared->read_rate_limiter->Request(128, Env::IO_HIGH,
                                                    nullptr /* stats */,
                                                    RateLimiter::OpType::kRead);
       }
@@ -5996,9 +5996,9 @@ class Benchmark {
       }
 
       if (thread->shared->read_rate_limiter.get() != nullptr &&
-          read % 256 == 255) {
+          read % 128 == 127) {
         thread->shared->read_rate_limiter->Request(
-            256, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
+            128, Env::IO_HIGH, nullptr /* stats */, RateLimiter::OpType::kRead);
       }
 
       thread->stats.FinishedOps(db_with_cfh, db_with_cfh->db, 1, kRead);
@@ -6101,9 +6101,9 @@ class Benchmark {
         }
       }
       if (thread->shared->read_rate_limiter.get() != nullptr &&
-          num_multireads % 256 == 255) {
+          num_multireads % 128 == 127) {
         thread->shared->read_rate_limiter->Request(
-            256 * entries_per_batch_, Env::IO_HIGH, nullptr /* stats */,
+            128 * entries_per_batch_, Env::IO_HIGH, nullptr /* stats */,
             RateLimiter::OpType::kRead);
       }
       thread->stats.FinishedOps(nullptr, db, entries_per_batch_, kRead);
