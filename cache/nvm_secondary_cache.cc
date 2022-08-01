@@ -10,6 +10,7 @@
 #include "memory/memory_allocator.h"
 #include "util/compression.h"
 #include "util/string_util.h"
+#include "logging/logging.h"
 
 
 namespace ROCKSDB_NAMESPACE {
@@ -47,10 +48,16 @@ NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
     cache_.reset();
     cache_ = std::make_unique<CacheT>(config_);
     defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
+
+    num_lookups_ = 0;
+    num_inserts_ = 0;
 }
 
 
-NVMSecondaryCache::~NVMSecondaryCache() { }
+NVMSecondaryCache::~NVMSecondaryCache() { 
+    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Lookups number is %" PRIu64, num_lookups_);
+    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Inserts number is %" PRIu64, num_inserts_);
+}
 
 
 std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
@@ -72,13 +79,9 @@ std::unique_ptr<SecondaryCacheResultHandle> NVMSecondaryCache::Lookup(
         Status s;
         CacheAllocationPtr* ptr = const_cast<CacheAllocationPtr*>(reinterpret_cast<const CacheAllocationPtr*>(nvm_handle->getMemory()));
         size_t size = nvm_handle->getSize();
-/*
-        void* str1 = nullptr;
-        memcpy(str1,nvm_handle->getMemory(), nvm_handle->getSize());
-        std::cout<<"nvm_handle value: "<< str1 <<std::endl;
-*/
         s = create_cb(ptr, size, &value, &charge);
         if(s.ok()) {
+            num_lookups_++;
             handle.reset(new NVMSecondaryCacheResultHandle(&nvm_handle,value,charge));
      	}
     }
@@ -103,7 +106,8 @@ Status NVMSecondaryCache::Insert(const Slice& key, void* value,
     auto handle = cache_->allocate(defaultPool_, key_, size);
     if(handle) {
         std::memcpy(handle->getMemory(), ptr.get(), size);
-	cache_->insertOrReplace(handle);
+	    cache_->insertOrReplace(handle);
+        num_inserts_++;
         return Status::OK();
     }
     return Status::NotFound();
