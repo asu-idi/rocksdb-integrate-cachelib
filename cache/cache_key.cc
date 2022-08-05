@@ -341,4 +341,18 @@ OffsetableCacheKey::OffsetableCacheKey(const std::string &db_id,
   assert(session_etc64_ != 0);
 }
 
+OffsetableCacheKey::OffsetableCacheKey(const std::string &db_paths,
+                                       uint64_t file_number,
+                                       uint64_t max_offset){
+#ifndef NDEBUG
+  max_offset_ = max_offset;
+#endif
+
+  uint64_t hash_seed = 0xffffffffffU;
+  uint64_t db_hash = Hash64(db_paths.data(), db_paths.size(), file_number);
+  session_etc64_ = file_number;
+  offset_etc64_ = db_hash;
+
+}
+
 }  // namespace ROCKSDB_NAMESPACE

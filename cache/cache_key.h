@@ -89,6 +89,8 @@ class OffsetableCacheKey : private CacheKey {
   OffsetableCacheKey(const std::string &db_id, const std::string &db_session_id,
                      uint64_t file_number, uint64_t max_offset);
 
+  OffsetableCacheKey(const std::string &db_paths, uint64_t file_number, uint64_t max_offset);
+
   inline bool IsEmpty() const {
     bool result = session_etc64_ == 0;
     assert(!(offset_etc64_ > 0 && result));
