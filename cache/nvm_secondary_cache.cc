@@ -48,7 +48,7 @@ NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
     cache_.reset();
     cache_ = std::make_unique<CacheT>(config_);
     defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
-
+    info_log_ = nullptr;
     num_lookups_ = 0;
     num_inserts_ = 0;
 }

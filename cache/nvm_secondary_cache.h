@@ -95,7 +95,7 @@ class NVMSecondaryCache : public SecondaryCache {
     // NVMSecondaryCacheOptions nvmSecondaryConfig_{};
     // std::unique_ptr<NvmCacheT> nvmCache_;
     // PoolId defaultPool_;
-
+    Logger* info_log_;
     uint32_t num_inserts_;
     uint32_t num_lookups_;
 };
