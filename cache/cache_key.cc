@@ -348,7 +348,7 @@ OffsetableCacheKey::OffsetableCacheKey(const std::string &db_paths,
   max_offset_ = max_offset;
 #endif
 
-  uint64_t hash_seed = 0xffffffffffU;
+  uint64_t hash_seed = file_number;
   uint64_t db_hash = Hash64(db_paths.data(), db_paths.size(), file_number);
   session_etc64_ = file_number;
   offset_etc64_ = db_hash;
