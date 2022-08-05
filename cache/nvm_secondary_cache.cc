@@ -55,8 +55,8 @@ NVMSecondaryCache::NVMSecondaryCache(const NVMSecondaryCacheOptions& opts) {
 
 
 NVMSecondaryCache::~NVMSecondaryCache() { 
-    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Lookups number is %" PRIu64, num_lookups_);
-    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Inserts number is %" PRIu64, num_inserts_);
+    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Lookups number is %" PRIu32, num_lookups_);
+    ROCKS_LOG_INFO(info_log_,"NVM Secondary Cache Inserts number is %" PRIu32, num_inserts_);
 }
 
 
