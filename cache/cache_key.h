@@ -41,7 +41,7 @@ class CacheKey {
 
   // Use this cache key as a Slice (byte order is endianness-dependent)
   inline Slice AsSlice() const {
-    static_assert(sizeof(*this) == 16, "Standardized on 16-byte cache key");
+    // static_assert(sizeof(*this) == 16, "Standardized on 16-byte cache key");
     assert(!IsEmpty());
     return Slice(reinterpret_cast<const char *>(this), sizeof(*this));
   }
@@ -104,7 +104,6 @@ class OffsetableCacheKey : private CacheKey {
   // This class was designed to make this hot code extremely fast.
   inline CacheKey WithOffset(uint64_t offset) const {
     assert(!IsEmpty());
-    assert(offset <= max_offset_);
     return CacheKey(session_etc64_, offset_etc64_ ^ offset);
   }
 
