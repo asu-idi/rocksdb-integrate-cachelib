@@ -347,11 +347,14 @@ OffsetableCacheKey::OffsetableCacheKey(const std::string &db_paths,
 #ifndef NDEBUG
   max_offset_ = max_offset;
 #endif
-
+  if(file_number == 0){
+    file_number++;
+  }
   uint64_t hash_seed = file_number;
-  uint64_t db_hash = Hash64(db_paths.data(), db_paths.size(), file_number);
+  uint64_t db_hash = Hash64(db_paths.data(), db_paths.size(), hash_seed);
   session_etc64_ = file_number;
   offset_etc64_ = db_hash;
+  assert(session_etc64_ != 0);
 
 }
 

@@ -526,7 +526,7 @@ void BlockBasedTable::SetupBaseCacheKey(const TableProperties* properties,
   std::string db_id;
   if (properties && !properties->db_session_id.empty() &&
       properties->orig_file_number > 0) {
-    // (Newer SST file case)
+    // (Newcer SST file case)
     // We must have both properties to get a stable unique id because
     // CreateColumnFamilyWithImport or IngestExternalFiles can change the
     // file numbers on a file.
@@ -748,19 +748,17 @@ Status BlockBasedTable::Open(
 #endif  // ROCKSDB_LITE
   }
 
-
-  // need to be changed !
-  // BaseCacheKey need to be unique without db info
-  // we will replace db_id, base_session_id and session_id_counter by db_path
-
   // With properties loaded, we can set up portable/stable cache keys
   // SetupBaseCacheKey(rep->table_properties.get(), cur_db_session_id,
   //                   cur_file_num, file_size, &rep->base_cache_key);
 
-  SetupBaseCacheKey(rep->table_properties.get(), rep->ioptions.db_paths[0].path,
+  if(rep->ioptions.db_paths.size() == 0){
+      SetupBaseCacheKey(rep->table_properties.get(), "/example_db_paths",
                     cur_file_num, file_size, &rep->base_cache_key);
-
-
+  } else {
+      SetupBaseCacheKey(rep->table_properties.get(), rep->ioptions.db_paths[0].path,
+                    cur_file_num, file_size, &rep->base_cache_key);
+  }
 
   rep->persistent_cache_options =
       PersistentCacheOptions(rep->table_options.persistent_cache,
