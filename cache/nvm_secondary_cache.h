@@ -86,7 +86,7 @@ class NVMSecondaryCache : public SecondaryCache {
   uint32_t num_lookups() { return num_lookups_; }
 
     private:
-    std::unique_ptr<CacheT> cache_;
+    std::shared_ptr<CacheT> cache_;
     CacheConfig config_;
     NvmCacheConfig nvmConfig_;
     NavyConfig navyConfig_;
